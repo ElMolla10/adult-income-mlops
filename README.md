@@ -73,12 +73,15 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Initialise DVC
+### 2. Configure DVC remote
 
 ```bash
-dvc init
-dvc remote add -d myremote /tmp/dvc-remote   # use any local path
+mkdir -p /tmp/dvc-remote
+dvc remote add -d myremote /tmp/dvc-remote
+dvc remote list
 ```
+
+This repository uses the default DVC remote `myremote` at `/tmp/dvc-remote` for local reproduction. After generating or updating DVC-tracked data artifacts, run `dvc push`; on another machine with the same remote available, run `dvc pull`.
 
 ### 3. Add data
 
