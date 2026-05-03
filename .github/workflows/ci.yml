@@ -139,7 +139,9 @@ jobs:
       - name: Configure local DVC remote
         run: |
           mkdir -p /tmp/dvc-remote
-          dvc init --no-scm
+          if [ ! -d .dvc ]; then
+            dvc init --no-scm
+          fi
           dvc remote add -d localremote /tmp/dvc-remote
 
       - name: Run DVC pipeline
