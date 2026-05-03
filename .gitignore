@@ -13,6 +13,7 @@ data/splits/*
 !data/processed/.gitkeep
 !data/splits/.gitkeep
 *.csv
+!docs/experiment_log.csv
 *.pkl
 *.parquet
 
