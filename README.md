@@ -76,12 +76,12 @@ pip install -r requirements.txt
 ### 2. Configure DVC remote
 
 ```bash
-mkdir -p /tmp/dvc-remote
-dvc remote add -d myremote /tmp/dvc-remote
+mkdir -p ~/dvc-remotes/adult-income-mlops
+dvc remote add -d myremote ~/dvc-remotes/adult-income-mlops
 dvc remote list
 ```
 
-This repository uses the default DVC remote `myremote` at `/tmp/dvc-remote` for local reproduction. After generating or updating DVC-tracked data artifacts, run `dvc push`; on another machine with the same remote available, run `dvc pull`.
+This repository uses the default DVC remote `myremote` at `~/dvc-remotes/adult-income-mlops` for local reproduction. After generating or updating DVC-tracked data artifacts, run `dvc push`; on another machine with the same remote available, run `dvc pull`.
 
 ### 3. Add data
 
