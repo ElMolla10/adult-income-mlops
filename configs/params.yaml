@@ -1,0 +1,86 @@
+data:
+  raw_train: data/raw/adult.data
+  raw_test: data/raw/adult.test
+  processed_train: data/processed/train.csv
+  processed_test: data/processed/test.csv
+  reference_data: data/splits/reference.csv
+  production_data: data/splits/production.csv
+  target_column: income
+  positive_label: ">50K"
+  columns:
+    - age
+    - workclass
+    - fnlwgt
+    - education
+    - education-num
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+    - native-country
+    - income
+
+preprocessing:
+  numeric_features:
+    - age
+    - fnlwgt
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  categorical_features:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+  pipeline_path: data/processed/pipeline.pkl
+  best_model_path: models/best_model.pkl
+  random_state: 42
+
+training:
+  mlflow_tracking_uri: http://localhost:5000
+  experiment_name: adult_income_classification
+  hpo_n_iter: 10
+  hpo_cv: 3
+  metric: f1
+  min_f1_threshold: 0.60
+  models:
+    logistic_regression:
+      C: [0.01, 0.1, 1.0, 10.0]
+      max_iter: [200, 500]
+      solver: [lbfgs]
+    random_forest:
+      n_estimators: [100, 200, 300]
+      max_depth: [5, 10, 20]
+      min_samples_split: [2, 5, 10]
+    xgboost:
+      n_estimators: [100, 200]
+      max_depth: [3, 6, 9]
+      learning_rate: [0.01, 0.1, 0.3]
+      subsample: [0.8, 1.0]
+
+serving:
+  model_name: adult_income_classifier
+  model_stage: Production
+  host: 0.0.0.0
+  port: 8000
+
+monitoring:
+  reference_data: data/splits/reference.csv
+  production_data: data/splits/production.csv
+  drift_threshold: 0.20
+  reports_dir: monitoring/evidently_reports
+  key_features:
+    - age
+    - hours-per-week
+    - education-num
+    - capital-gain
+    - sex

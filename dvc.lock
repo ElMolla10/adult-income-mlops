@@ -1,0 +1,207 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python src/data/load_data.py
+    deps:
+    - path: configs/params.yaml
+      hash: md5
+      md5: 12f2fbac6558f019fb6234cb10c7d277
+      size: 1864
+    - path: data/raw/adult.data
+      hash: md5
+      md5: 5d7c39d7b8804f071cdd1f2a7c460872
+      size: 3974305
+    - path: data/raw/adult.test
+      hash: md5
+      md5: 35238206dfdf7f1fe215bbb874adecdc
+      size: 2003153
+    - path: src/data/load_data.py
+      hash: md5
+      md5: 36dc1507c2d53299a0346194cbc6e8a7
+      size: 1469
+    params:
+      configs/params.yaml:
+        data.columns:
+        - age
+        - workclass
+        - fnlwgt
+        - education
+        - education-num
+        - marital-status
+        - occupation
+        - relationship
+        - race
+        - sex
+        - capital-gain
+        - capital-loss
+        - hours-per-week
+        - native-country
+        - income
+        data.target_column: income
+    outs:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 685ff09725a035fd2c84d56ab969a427
+      size: 1756869
+    - path: data/processed/train.csv
+      hash: md5
+      md5: da523a1a4bb583c5a7f2933757b6a64b
+      size: 3514344
+  preprocess:
+    cmd: python src/features/feature_engineering.py
+    deps:
+    - path: configs/params.yaml
+      hash: md5
+      md5: 12f2fbac6558f019fb6234cb10c7d277
+      size: 1864
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 685ff09725a035fd2c84d56ab969a427
+      size: 1756869
+    - path: data/processed/train.csv
+      hash: md5
+      md5: da523a1a4bb583c5a7f2933757b6a64b
+      size: 3514344
+    - path: src/features/feature_engineering.py
+      hash: md5
+      md5: 99e8b54c820e4693b3318fafe618f177
+      size: 4521
+    - path: src/features/transformers.py
+      hash: md5
+      md5: 39c99288b6d0b0d0022940655d57e1bf
+      size: 365
+    params:
+      configs/params.yaml:
+        preprocessing.categorical_features:
+        - workclass
+        - education
+        - marital-status
+        - occupation
+        - relationship
+        - race
+        - sex
+        - native-country
+        preprocessing.numeric_features:
+        - age
+        - fnlwgt
+        - education-num
+        - capital-gain
+        - capital-loss
+        - hours-per-week
+        preprocessing.pipeline_path: data/processed/pipeline.pkl
+        preprocessing.random_state: 42
+    outs:
+    - path: data/processed/pipeline.pkl
+      hash: md5
+      md5: 4526a7889fbad47bf97741ff796ce73c
+      size: 4285
+    - path: data/splits/X_test.csv
+      hash: md5
+      md5: dffc8099975df8180b156da5cfdb2de8
+      size: 8416562
+    - path: data/splits/X_train.csv
+      hash: md5
+      md5: c762b887a5076a3f01e32966f39e3069
+      size: 16832447
+    - path: data/splits/X_train_resampled.csv
+      hash: md5
+      md5: 4d59ea9d34be4b329ff0a7e453831ea8
+      size: 25839246
+    - path: data/splits/production.csv
+      hash: md5
+      md5: 8b180e199643b1399d94c0edbf404a00
+      size: 1035232
+    - path: data/splits/reference.csv
+      hash: md5
+      md5: da523a1a4bb583c5a7f2933757b6a64b
+      size: 3514344
+    - path: data/splits/y_test.csv
+      hash: md5
+      md5: 0c34726516e3c7a4a554e837afd744de
+      size: 32569
+    - path: data/splits/y_train.csv
+      hash: md5
+      md5: 96aae77f7320bb50d81403d086eee728
+      size: 65129
+    - path: data/splits/y_train_resampled.csv
+      hash: md5
+      md5: 5d9354939680a91ef1ad69068b6a6f6a
+      size: 98887
+  train:
+    cmd: python src/training/train.py
+    deps:
+    - path: configs/params.yaml
+      hash: md5
+      md5: 12f2fbac6558f019fb6234cb10c7d277
+      size: 1864
+    - path: data/splits/X_test.csv
+      hash: md5
+      md5: dffc8099975df8180b156da5cfdb2de8
+      size: 8416562
+    - path: data/splits/X_train.csv
+      hash: md5
+      md5: c762b887a5076a3f01e32966f39e3069
+      size: 16832447
+    - path: data/splits/y_test.csv
+      hash: md5
+      md5: 0c34726516e3c7a4a554e837afd744de
+      size: 32569
+    - path: data/splits/y_train.csv
+      hash: md5
+      md5: 96aae77f7320bb50d81403d086eee728
+      size: 65129
+    - path: src/training/train.py
+      hash: md5
+      md5: c69bf802c9d536d6967ba50082d65fb2
+      size: 6436
+    params:
+      configs/params.yaml:
+        training.experiment_name: adult_income_classification
+        training.hpo_cv: 3
+        training.hpo_n_iter: 10
+        training.metric: f1
+        training.models:
+          logistic_regression:
+            C:
+            - 0.01
+            - 0.1
+            - 1.0
+            - 10.0
+            max_iter:
+            - 200
+            - 500
+            solver:
+            - lbfgs
+          random_forest:
+            n_estimators:
+            - 100
+            - 200
+            - 300
+            max_depth:
+            - 5
+            - 10
+            - 20
+            min_samples_split:
+            - 2
+            - 5
+            - 10
+          xgboost:
+            n_estimators:
+            - 100
+            - 200
+            max_depth:
+            - 3
+            - 6
+            - 9
+            learning_rate:
+            - 0.01
+            - 0.1
+            - 0.3
+            subsample:
+            - 0.8
+            - 1.0
+    outs:
+    - path: models/best_model.pkl
+      hash: md5
+      md5: cf546d8000408d94c9e0f0526e95ea59
+      size: 851975

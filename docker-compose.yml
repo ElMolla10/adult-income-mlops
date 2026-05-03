@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  # ------------------------------------------------------------------ #
+  # MLflow tracking server
+  # ------------------------------------------------------------------ #
+  mlflow:
+    image: python:3.10.14-slim
+    command: >
+      bash -c "pip install mlflow==2.12.2 &&
+               mlflow server
+               --backend-store-uri sqlite:////mlflow/mlflow.db
+               --default-artifact-root /mlflow/artifacts
+               --host 0.0.0.0
+               --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ------------------------------------------------------------------ #
+  # Model serving application
+  # ------------------------------------------------------------------ #
+  serving:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - app-network
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+      - ./models:/app/models
+
+  # ------------------------------------------------------------------ #
+  # Prometheus metrics collection
+  # ------------------------------------------------------------------ #
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - app-network
+    depends_on:
+      - serving
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mlflow_data:
