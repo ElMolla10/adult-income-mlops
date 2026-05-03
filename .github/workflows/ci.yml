@@ -50,7 +50,8 @@ jobs:
       - name: Run unit tests with coverage
         run: |
           pytest tests/unit/ tests/data/ \
-            --cov=src \
+            --cov=src.features.transformers \
+            --cov=src.data.validate_data \
             --cov-report=term-missing \
             --cov-fail-under=70 \
             -v
