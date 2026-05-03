@@ -5,12 +5,12 @@
 | Field | Value |
 |---|---|
 | **Model name** | adult_income_classifier |
-| **Version** | See MLflow Model Registry |
+| **Version** | MLflow Model Registry version 3, Production |
 | **Task** | Binary classification |
 | **Output** | `>50K` or `<=50K` (annual income) |
-| **Algorithm** | Best of: Logistic Regression, Random Forest, XGBoost (selected by F1) |
+| **Algorithm** | XGBoost, selected by highest F1 among Logistic Regression, Random Forest, and XGBoost |
 | **Framework** | scikit-learn / XGBoost |
-| **Training date** | See MLflow run metadata |
+| **Training date** | 2026-05-03 10:28:50 UTC |
 
 ---
 
@@ -33,7 +33,7 @@
 | **Source** | https://archive.ics.uci.edu/dataset/2/adult |
 | **License** | CC BY 4.0 |
 | **Training split** | `adult.data` — 32,561 rows |
-| **Reference period** | ~1994 US Census data |
+| **Reference period** | 1994 US Census data |
 
 **Features used:** age, workclass, fnlwgt, education, education-num, marital-status, occupation, relationship, race, sex, capital-gain, capital-loss, hours-per-week, native-country.
 
@@ -41,24 +41,29 @@
 
 ## Evaluation Metrics
 
-### Overall (on adult.test, 16,282 rows)
+### Overall (on adult.test, 16,281 rows)
 
 | Metric | Value |
 |---|---|
-| Accuracy | ~87% |
-| F1 Score | ~0.73 |
-| Precision | ~0.75 |
-| Recall | ~0.71 |
-| ROC-AUC | ~0.91 |
+| Accuracy | 0.8515 |
+| F1 Score | 0.7117 |
+| Precision | 0.6573 |
+| Recall | 0.7759 |
+| ROC-AUC | 0.9204 |
 
-### Per-Subgroup (known disparities)
+### Per-Subgroup Metrics
 
-| Group | Approximate Positive Rate |
-|---|---|
-| Male | ~31% |
-| Female | ~11% |
-| White | ~26% |
-| Black | ~13% |
+Metrics below are computed with `classification_report` on `adult.test` filtered separately by `sex` and `race`. Precision, recall, and F1 are for the positive class (`>50K`).
+
+| Attribute | Group | Rows | Positive Rate | Accuracy | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sex | Female | 5,421 | 0.1088 | 0.9290 | 0.6740 | 0.6729 | 0.6735 |
+| sex | Male | 10,860 | 0.2998 | 0.8128 | 0.6548 | 0.7945 | 0.7179 |
+| race | Amer-Indian-Eskimo | 159 | 0.1195 | 0.9119 | 0.6923 | 0.4737 | 0.5625 |
+| race | Asian-Pac-Islander | 480 | 0.2771 | 0.8458 | 0.7323 | 0.6992 | 0.7154 |
+| race | Black | 1,561 | 0.1147 | 0.9321 | 0.7355 | 0.6369 | 0.6826 |
+| race | Other | 135 | 0.1852 | 0.8889 | 0.8125 | 0.5200 | 0.6341 |
+| race | White | 13,946 | 0.2503 | 0.8416 | 0.6515 | 0.7894 | 0.7138 |
 
 > **Note:** The model inherits the historical biases present in 1994 Census data. Income disparity by sex and race is a data artefact, not a model design choice.
 
@@ -69,7 +74,7 @@
 - **Temporal:** Trained on 1994 census data; income dynamics have changed substantially.
 - **Geographic:** US-centric; not valid for other countries.
 - **Feature bias:** `sex` and `race` are correlated with the target due to systemic inequality, not because they are causal predictors.
-- **Class imbalance:** ~76% of samples are `<=50K`; minority class performance is lower.
+- **Class imbalance:** 75.9190% of original training samples are `<=50K`; minority class performance is lower.
 
 ---
 
