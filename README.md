@@ -121,6 +121,37 @@ uvicorn src.serving.app:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
+## Streamlit Demo App
+
+A self-contained local demo of the trained classifier. It loads the
+artifacts directly from disk and does **not** require the MLflow or FastAPI
+servers to be running.
+
+```bash
+source .venv/bin/activate
+streamlit run streamlit_app.py
+```
+
+The app provides three tabs:
+
+- **Single Prediction** — form for one Adult Income record with input
+  validation, an "Use Example Record" selector with several profiles, a
+  "Reset Inputs" button, predicted class, and `predict_proba` for `>50K`.
+- **Batch Prediction** — upload a CSV, get predictions back, download as CSV.
+  Missing/extra columns and bad values are reported as friendly messages.
+- **Model Info** — known metrics, artifact health checks, model parameters,
+  and the model card.
+
+If the app reports missing artifacts, run:
+
+```bash
+dvc pull
+# or, to regenerate locally
+dvc repro
+```
+
+---
+
 ## Docker (Bonus A)
 
 Prerequisite: run the DVC pipeline first so `data/processed/pipeline.pkl` and `models/best_model.pkl` exist locally before building Docker images.
@@ -231,7 +262,16 @@ Branch protection on `main` requires all stages to pass before merging.
 
 ### External Resources
 
-To be completed before final submission.
+- UCI Adult Income Dataset: https://archive.ics.uci.edu/dataset/2/adult
+- MLflow — experiment tracking and model registry: https://mlflow.org
+- DVC — data version control and pipeline management: https://dvc.org
+- Evidently AI — data drift and model monitoring: https://www.evidentlyai.com
+- FastAPI — model serving framework: https://fastapi.tiangolo.com
+- scikit-learn — preprocessing and model training: https://scikit-learn.org
+- XGBoost — gradient boosting classifier: https://xgboost.readthedocs.io
+- Prometheus — metrics collection: https://prometheus.io
+- imbalanced-learn (SMOTE): https://imbalanced-learn.org
+- Pandera — data validation: https://pandera.readthedocs.io
 
 ### AI Assistance
 
