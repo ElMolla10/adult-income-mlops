@@ -24,4 +24,3 @@ seaborn==0.13.2
 setuptools==70.0.0
 pathspec==0.12.1
 streamlit==1.36.0
-prefect>=3.0,<4.0
