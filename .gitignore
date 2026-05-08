@@ -67,3 +67,5 @@ htmlcov/
 
 # Docker
 *.log
+orchestration/**/__pycache__/
+orchestration/**/*.pyc
