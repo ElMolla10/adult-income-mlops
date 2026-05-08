@@ -10,8 +10,10 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import pickle
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -47,19 +49,18 @@ DRIFT_REPORT_PATH = PROJECT_ROOT / "monitoring" / "evidently_reports" / "drift_r
 DRIFT_ALERT_PATH = PROJECT_ROOT / "monitoring" / "evidently_reports" / "drift_alert.json"
 MLFLOW_DB_PATH = PROJECT_ROOT / "mlflow.db"
 
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.environ.get("ADULT_INCOME_API_URL", "http://localhost:8000")
 MLFLOW_TRACKING_URI = "sqlite:///mlflow.db"
-GITHUB_ACTIONS_URL = "https://github.com/ElMolla10/adult-income-mlops/actions"
 
 POSITIVE_LABEL = ">50K"
 NEGATIVE_LABEL = "<=50K"
 
 MODEL_METRICS = {
-    "F1": 0.7117,
-    "Accuracy": 0.8515,
-    "ROC-AUC": 0.9204,
-    "Precision": 0.6573,
-    "Recall": 0.7759,
+    "F1": 0.7097,
+    "Accuracy": 0.8541,
+    "ROC-AUC": 0.9196,
+    "Precision": 0.6697,
+    "Recall": 0.7548,
 }
 
 NUMERIC_FEATURES = [
@@ -233,6 +234,69 @@ CATEGORY_OPTIONS: dict[str, list[str]] = {
     ],
 }
 
+CATEGORY_DISPLAY_LABELS: dict[str, dict[str, str]] = {
+    "workclass": {
+        "Self-emp-not-inc": "Self-employed, not incorporated",
+        "Self-emp-inc": "Self-employed, incorporated",
+        "Federal-gov": "Federal government",
+        "Local-gov": "Local government",
+        "State-gov": "State government",
+        "Without-pay": "Unpaid work",
+        "Never-worked": "Never worked",
+    },
+    "education": {
+        "Some-college": "Some college",
+        "HS-grad": "High school graduate",
+        "Prof-school": "Professional school",
+        "Assoc-acdm": "Associate degree, academic",
+        "Assoc-voc": "Associate degree, vocational",
+    },
+    "marital-status": {
+        "Married-civ-spouse": "Married, civilian spouse",
+        "Never-married": "Never married",
+        "Married-spouse-absent": "Married, spouse absent",
+        "Married-AF-spouse": "Married, Armed Forces spouse",
+    },
+    "occupation": {
+        "Tech-support": "Tech support",
+        "Craft-repair": "Craft and repair",
+        "Other-service": "Other service",
+        "Exec-managerial": "Executive or managerial",
+        "Prof-specialty": "Professional specialty",
+        "Handlers-cleaners": "Handlers and cleaners",
+        "Machine-op-inspct": "Machine operator or inspector",
+        "Adm-clerical": "Administrative clerical",
+        "Farming-fishing": "Farming or fishing",
+        "Transport-moving": "Transport and moving",
+        "Priv-house-serv": "Private household service",
+        "Protective-serv": "Protective service",
+        "Armed-Forces": "Armed Forces",
+    },
+    "relationship": {
+        "Own-child": "Child",
+        "Not-in-family": "Not in family",
+        "Other-relative": "Other relative",
+    },
+    "race": {
+        "Asian-Pac-Islander": "Asian or Pacific Islander",
+        "Amer-Indian-Eskimo": "American Indian or Alaska Native",
+        "Other": "Other / not specified",
+    },
+    "native-country": {
+        "United-States": "United States",
+        "Puerto-Rico": "Puerto Rico",
+        "Outlying-US(Guam-USVI-etc)": "Outlying US territories",
+        "Dominican-Republic": "Dominican Republic",
+        "El-Salvador": "El Salvador",
+        "Trinadad&Tobago": "Trinidad and Tobago",
+        "Holand-Netherlands": "Holland / Netherlands",
+    },
+}
+REVERSE_CATEGORY_DISPLAY_LABELS = {
+    column: {label: value for value, label in labels.items()}
+    for column, labels in CATEGORY_DISPLAY_LABELS.items()
+}
+
 DEFAULT_PROFILE = {
     "age": 35,
     "workclass": "Private",
@@ -346,12 +410,12 @@ DRIFT_SCORES = pd.DataFrame(
 
 SUBGROUP_F1 = pd.DataFrame(
     [
-        {"group": "Female", "f1": 0.6735},
-        {"group": "Male", "f1": 0.7179},
-        {"group": "White", "f1": 0.7138},
-        {"group": "Black", "f1": 0.6826},
-        {"group": "Asian-Pac-Islander", "f1": 0.7154},
-        {"group": "Amer-Indian-Eskimo", "f1": 0.5625},
+        {"group": "Female", "f1": 0.6678},
+        {"group": "Male", "f1": 0.7165},
+        {"group": "White", "f1": 0.7140},
+        {"group": "Black", "f1": 0.6526},
+        {"group": "Asian-Pac-Islander", "f1": 0.6926},
+        {"group": "Amer-Indian-Eskimo", "f1": 0.5000},
     ]
 )
 
@@ -360,6 +424,8 @@ CI_STAGES = pd.DataFrame(
         {"stage": "Lint", "duration": "6s", "seconds": 6},
         {"stage": "Unit Tests", "duration": "1m30s", "seconds": 90},
         {"stage": "Data Validation", "duration": "1m40s", "seconds": 100},
+        {"stage": "Integration Tests", "duration": "10s", "seconds": 10},
+        {"stage": "Coverage", "duration": "72%", "seconds": 12},
         {"stage": "Train", "duration": "2m58s", "seconds": 178},
         {"stage": "Model Validation", "duration": "1m13s", "seconds": 73},
     ]
@@ -371,6 +437,43 @@ def safe_rel(path: Path) -> str:
         return str(path.relative_to(PROJECT_ROOT))
     except ValueError:
         return str(path)
+
+
+@st.cache_data(show_spinner=False)
+def github_actions_url() -> str:
+    configured = os.environ.get("GITHUB_ACTIONS_URL")
+    if configured:
+        return configured
+
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        remote = result.stdout.strip()
+    except Exception:
+        return "https://github.com"
+
+    repo = ""
+    if remote.startswith("git@github.com:"):
+        repo = remote.split(":", 1)[1]
+    elif "github.com/" in remote:
+        repo = remote.split("github.com/", 1)[1]
+
+    repo = repo.removesuffix(".git").strip("/")
+    if repo:
+        return f"https://github.com/{repo}/actions"
+    return "https://github.com"
+
+
+def prefect_executable() -> str:
+    local_prefect = PROJECT_ROOT / ".venv" / "bin" / "prefect"
+    if local_prefect.exists():
+        return str(local_prefect)
+    return shutil.which("prefect") or "prefect"
 
 
 @st.cache_data(show_spinner=False)
@@ -519,23 +622,50 @@ def display_name(column: str) -> str:
     return DISPLAY_LABELS.get(column, column)
 
 
+def category_display_name(column: str, value: str) -> str:
+    return CATEGORY_DISPLAY_LABELS.get(column, {}).get(value, value)
+
+
+def display_selectbox(column: str) -> None:
+    st.selectbox(
+        display_name(column),
+        CATEGORY_OPTIONS[column],
+        key=f"input_{column}",
+        format_func=lambda value: category_display_name(column, value),
+    )
+
+
 def display_feature_name(raw_name: str) -> str:
     name = raw_name
     if "__" in name:
         name = name.split("__", 1)[1]
     for column in sorted(FEATURE_ORDER, key=len, reverse=True):
         if name == column or name.startswith(f"{column}_"):
-            suffix = name[len(column) :].lstrip("_")
-            return f"{display_name(column)}: {suffix}" if suffix else display_name(column)
+            suffix = name[len(column):].lstrip("_")
+            suffix_label = category_display_name(column, suffix) if suffix else suffix
+            return f"{display_name(column)}: {suffix_label}" if suffix else display_name(column)
     return name.replace("_", " ").title()
 
 
 def to_display_columns(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns=DISPLAY_LABELS)
+    display_df = df.copy()
+    for column in CATEGORICAL_FEATURES:
+        if column in display_df.columns:
+            display_df[column] = display_df[column].map(
+                lambda value: category_display_name(column, value)
+            )
+    return display_df.rename(columns=DISPLAY_LABELS)
 
 
 def normalize_uploaded_columns(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns=REVERSE_DISPLAY_LABELS)
+    normalized = df.rename(columns=REVERSE_DISPLAY_LABELS).copy()
+    for column in CATEGORICAL_FEATURES:
+        if column in normalized.columns:
+            reverse_values = REVERSE_CATEGORY_DISPLAY_LABELS.get(column, {})
+            normalized[column] = normalized[column].map(
+                lambda value: reverse_values.get(value, value)
+            )
+    return normalized
 
 
 def normalize_input_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -558,8 +688,12 @@ def predict_dataframe(df: pd.DataFrame, preprocessor: Any, model: Any) -> tuple[
 
 
 def feature_importance_frame(preprocessor: Any, model: Any) -> pd.DataFrame:
+    importance_model = model
+    if hasattr(model, "named_steps") and "model" in model.named_steps:
+        importance_model = model.named_steps["model"]
+
     try:
-        importances = np.asarray(model.feature_importances_, dtype=float)
+        importances = np.asarray(importance_model.feature_importances_, dtype=float)
     except Exception:
         return pd.DataFrame(columns=["feature", "importance"])
 
@@ -728,6 +862,7 @@ def render_pipeline_overview(model_ready: bool, api_status: dict[str, Any], drif
     cols[0].metric("F1", f"{MODEL_METRICS['F1']:.4f}")
     cols[1].metric("Accuracy", f"{MODEL_METRICS['Accuracy']:.4f}")
     cols[2].metric("ROC-AUC", f"{MODEL_METRICS['ROC-AUC']:.4f}")
+    st.caption("Model metrics are a snapshot from the latest verified training run.")
 
     st.plotly_chart(architecture_figure(), use_container_width=True)
 
@@ -805,10 +940,10 @@ def render_single_prediction(preprocessor: Any, model: Any, model_ready: bool) -
                 key="input_hours-per-week",
             )
             for col in ["workclass", "education", "marital-status", "occupation"]:
-                st.selectbox(display_name(col), CATEGORY_OPTIONS[col], key=f"input_{col}")
+                display_selectbox(col)
         with c3:
             for col in ["relationship", "race", "sex", "native-country"]:
-                st.selectbox(display_name(col), CATEGORY_OPTIONS[col], key=f"input_{col}")
+                display_selectbox(col)
         submitted = st.form_submit_button("Predict", type="primary", disabled=not model_ready)
 
     if not model_ready:
@@ -920,10 +1055,6 @@ def render_batch_prediction(preprocessor: Any, model: Any, model_ready: bool) ->
     fig.update_traces(marker={"colors": ["#16a34a", "#f59e0b"]})
     st.plotly_chart(fig, use_container_width=True)
 
-    def color_prediction(row: pd.Series) -> list[str]:
-        color = "background-color: #ffedd5" if row["prediction"] == POSITIVE_LABEL else "background-color: #dcfce7"
-        return [color if col == "prediction" else "" for col in row.index]
-
     display_results = to_display_columns(results)
 
     def color_display_prediction(row: pd.Series) -> list[str]:
@@ -989,6 +1120,40 @@ def render_monitoring() -> None:
     alert, alert_error = load_json(DRIFT_ALERT_PATH)
     if alert and alert.get("action") == "RETRAIN_REQUIRED":
         st.error("RETRAIN_REQUIRED: production drift exceeds the configured threshold.")
+        retraining = alert.get("retraining", {})
+        command = retraining.get(
+            "manual_trigger_command",
+            'prefect deployment run "adult_income_training_pipeline/adult-income-weekly"',
+        )
+        st.caption("Retraining is connected to the Prefect deployment and can be triggered manually.")
+        st.code(command, language="bash")
+        if st.button("Trigger Prefect Retraining", type="primary"):
+            try:
+                completed = subprocess.run(
+                    [
+                        prefect_executable(),
+                        "deployment",
+                        "run",
+                        retraining.get(
+                            "deployment",
+                            "adult_income_training_pipeline/adult-income-weekly",
+                        ),
+                    ],
+                    cwd=PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                if completed.returncode == 0:
+                    st.success("Prefect retraining run submitted.")
+                else:
+                    st.warning(f"Prefect trigger exited with code {completed.returncode}.")
+                with st.expander("Prefect trigger output"):
+                    st.code((completed.stdout + "\n" + completed.stderr).strip() or "(no output)")
+            except Exception as exc:
+                logger.exception("Prefect retraining trigger failed")
+                st.warning(f"Could not trigger Prefect retraining: {exc}")
     elif alert_error:
         st.warning(alert_error)
     else:
@@ -997,6 +1162,7 @@ def render_monitoring() -> None:
     c1, c2 = st.columns(2)
     c1.metric("Baseline Drift Ratio", "0.00%")
     c2.metric("Production Drift Ratio", "37.50%")
+    st.caption("Drift values are a snapshot from the latest generated Evidently reports.")
     summary = pd.DataFrame(
         [
             {"dataset": "baseline", "drift_ratio": "0.00%", "drifted_features": 0},
@@ -1108,9 +1274,9 @@ def render_model_card() -> None:
 
 def render_cicd_status() -> None:
     st.title("CI/CD Status")
+    st.caption("Snapshot from the latest verified local/CI run. Open GitHub Actions for the live workflow state.")
     st.subheader("Pipeline")
     fig = go.Figure()
-    x_positions = list(range(len(CI_STAGES)))
     for idx, row in CI_STAGES.iterrows():
         fig.add_trace(
             go.Scatter(
@@ -1143,15 +1309,16 @@ def render_cicd_status() -> None:
     st.plotly_chart(fig, use_container_width=True)
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total Coverage", "77%")
-    c2.metric("transformers.py", "100%")
-    c3.metric("validate_data.py", "68%")
+    c1.metric("Total Coverage", "72%")
+    c2.metric("serving/app.py", "69%")
+    c3.metric("feature_engineering.py", "95%")
 
     coverage = pd.DataFrame(
         [
-            {"file": "transformers.py", "coverage": 100},
-            {"file": "validate_data.py", "coverage": 68},
-            {"file": "total", "coverage": 77},
+            {"file": "feature_engineering.py", "coverage": 95},
+            {"file": "evaluate.py", "coverage": 88},
+            {"file": "serving/app.py", "coverage": 69},
+            {"file": "src total", "coverage": 72},
         ]
     )
     fig_cov = px.bar(coverage, x="file", y="coverage", text="coverage", title="Coverage by File")
@@ -1159,7 +1326,7 @@ def render_cicd_status() -> None:
     fig_cov.update_layout(yaxis_range=[0, 100], height=360)
     st.plotly_chart(fig_cov, use_container_width=True)
 
-    st.link_button("Open GitHub Actions", GITHUB_ACTIONS_URL)
+    st.link_button("Open GitHub Actions", github_actions_url())
 
 
 def main() -> None:

@@ -11,7 +11,7 @@ import logging
 import os
 import pickle
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 import yaml
@@ -22,6 +22,7 @@ from evidently.metric_preset import (
     DataQualityPreset,
 )
 from evidently.report import Report
+from sklearn.model_selection import train_test_split
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.getcwd())
+
+PREFECT_DEPLOYMENT_NAME = "adult_income_training_pipeline/adult-income-weekly"
+PREFECT_TRIGGER_COMMAND = f'prefect deployment run "{PREFECT_DEPLOYMENT_NAME}"'
+LOCAL_RETRAIN_COMMAND = "python orchestration/flows/training_flow.py"
 
 
 def load_params() -> dict:
@@ -78,6 +83,28 @@ def extract_drift_info(report: Report) -> tuple[float, list[str]]:
     return ratio, drifted
 
 
+def build_retraining_alert(
+    drift_ratio: float,
+    threshold: float,
+    drifted_features: list[str],
+) -> dict:
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "drift_ratio": round(drift_ratio, 4),
+        "threshold": threshold,
+        "drifted_features": drifted_features,
+        "drifted_feature_count": len(drifted_features),
+        "action": "RETRAIN_REQUIRED",
+        "retraining": {
+            "orchestrator": "prefect",
+            "deployment": PREFECT_DEPLOYMENT_NAME,
+            "manual_trigger_command": PREFECT_TRIGGER_COMMAND,
+            "local_fallback_command": LOCAL_RETRAIN_COMMAND,
+            "ui": "http://localhost:4200/deployments",
+        },
+    }
+
+
 def run_monitoring() -> None:
     params = load_params()
     target = params["data"]["target_column"]
@@ -117,9 +144,13 @@ def run_monitoring() -> None:
     # Report 1: Baseline (reference vs clean 20% held-out from reference)
     # Expected: minimal drift
     # ------------------------------------------------------------------ #
-    split = int(len(reference_df) * 0.8)
-    baseline_ref = reference_df.iloc[:split]
-    baseline_cur = reference_df.iloc[split:]
+    baseline_ref, baseline_cur = train_test_split(
+        reference_df,
+        test_size=0.2,
+        random_state=params["preprocessing"]["random_state"],
+        shuffle=True,
+        stratify=reference_df[target],
+    )
 
     logger.info("Generating baseline report (reference vs held-out)...")
     baseline_report = build_report(baseline_ref, baseline_cur, column_mapping)
@@ -151,14 +182,7 @@ def run_monitoring() -> None:
     # Threshold check
     # ------------------------------------------------------------------ #
     if drift_ratio > threshold:
-        alert = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "drift_ratio": round(drift_ratio, 4),
-            "threshold": threshold,
-            "drifted_features": drifted_features,
-            "drifted_feature_count": len(drifted_features),
-            "action": "RETRAIN_REQUIRED",
-        }
+        alert = build_retraining_alert(drift_ratio, threshold, drifted_features)
         logger.warning(
             f"DRIFT ALERT: {len(drifted_features)} features drifted "
             f"({drift_ratio:.2%} > {threshold:.2%} threshold). "
@@ -167,7 +191,10 @@ def run_monitoring() -> None:
         alert_path = os.path.join(output_dir, "drift_alert.json")
         with open(alert_path, "w") as fh:
             json.dump(alert, fh, indent=2)
-        logger.warning(f"Alert written to {alert_path}. Action: RETRAIN_REQUIRED")
+        logger.warning(
+            f"Alert written to {alert_path}. Action: RETRAIN_REQUIRED. "
+            f"Trigger retraining with: {PREFECT_TRIGGER_COMMAND}"
+        )
     else:
         logger.info("No significant drift detected. System healthy.")
 

@@ -1,6 +1,6 @@
 # Pipeline Orchestration with Prefect (Bonus B)
 
-This directory contains the Prefect 2.x flow that orchestrates the end-to-end
+This directory contains the Prefect 3.x flow that orchestrates the end-to-end
 training pipeline. It satisfies the rubric's Bonus B requirement (up to +10
 points) for pipeline orchestration with Apache Airflow or Prefect.
 
@@ -21,8 +21,8 @@ tasks if it raises an exception.
 |---|------|-------|---------|
 | 1 | `prepare_data` | `src/data/load_data.py` | Load raw CSVs, fix labels |
 | 2 | `validate_data` | `src/data/validate_data.py` | Pandera schema check |
-| 3 | `preprocess` | `src/features/feature_engineering.py` | Fit Pipeline + SMOTE |
-| 4 | `train` | `src/training/train.py` | 3 experiments, HPO, register best |
+| 3 | `preprocess` | `src/features/feature_engineering.py` | Fit preprocessing pipeline + save splits |
+| 4 | `train` | `src/training/train.py` | 3 experiments, HPO with fold-local SMOTE, register best |
 | 5 | `evaluate` | `src/evaluation/evaluate.py` | Quality gate (F1 >= 0.60) |
 | 6 | `register_model` | (verifies in MLflow Registry) | Confirm Production-stage |
 
@@ -30,13 +30,13 @@ tasks if it raises an exception.
 
 ```bash
 # 0. (one-time) install Prefect
-pip install -r requirements.txt
+pip install -r requirements-orchestration.txt
 
 # 1. Start the Prefect server (UI at http://localhost:4200)
 prefect server start
 
 # 2. In a SECOND terminal, register the deployment + start the worker
-python orchestration/deploy.py
+MLFLOW_TRACKING_URI=sqlite:///mlflow.db python orchestration/deploy.py
 
 # 3. Trigger a run from the UI (Deployments tab → Quick run)
 #    or from CLI:
@@ -48,6 +48,28 @@ The flow can also be run as a one-shot script for development:
 ```bash
 python orchestration/flows/training_flow.py
 ```
+
+## Drift-Triggered Retraining
+
+The monitoring script writes `monitoring/evidently_reports/drift_alert.json`
+when production drift exceeds the configured threshold. That alert is linked to
+this Prefect deployment:
+
+```json
+{
+  "action": "RETRAIN_REQUIRED",
+  "retraining": {
+    "orchestrator": "prefect",
+    "deployment": "adult_income_training_pipeline/adult-income-weekly",
+    "manual_trigger_command": "prefect deployment run \"adult_income_training_pipeline/adult-income-weekly\""
+  }
+}
+```
+
+For the demo, retraining is manually triggered from either the Prefect UI, the
+CLI command above, or the Streamlit **Monitoring & Drift Detection** page. This
+keeps the drift-to-retraining loop explicit without auto-promoting a model
+without human review.
 
 ## Schedule
 
@@ -80,7 +102,7 @@ orchestration/
 
 ## Prerequisites
 
-- Prefect 2.19.x (in `requirements.txt`)
+- Prefect 3.x (in `requirements-orchestration.txt`)
 - A running MLflow tracking server (the flow reads/writes to it)
 - The `data/raw/adult.data` and `adult.test` files must exist (the flow's
   `prepare_data` task reads them)

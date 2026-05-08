@@ -4,8 +4,8 @@ Adult Income Training Pipeline — Prefect Flow (Bonus B)
 End-to-end training orchestration with 6 sequential tasks:
   1. prepare_data    — load & clean raw CSVs
   2. validate_data   — Pandera schema check (halts pipeline on failure)
-  3. preprocess      — fit sklearn Pipeline + SMOTE, save artifacts
-  4. train           — 3 MLflow experiments + HPO + register best model
+  3. preprocess      — fit sklearn preprocessing Pipeline, save artifacts
+  4. train           — 3 MLflow experiments + fold-local SMOTE HPO + register best model
   5. evaluate        — assert F1 >= threshold (quality gate)
   6. register_model  — verify Production-stage transition in MLflow Registry
 
@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 
 from prefect import flow, task, get_run_logger
-from prefect.task_runners import SequentialTaskRunner
 
 # ------------------------------------------------------------------ #
 # Make the project root importable regardless of where Prefect runs
@@ -84,7 +83,7 @@ def validate_data_task(_upstream: bool) -> bool:
 # ------------------------------------------------------------------ #
 @task(name="preprocess", retries=0, log_prints=True)
 def preprocess_task(_upstream: bool) -> bool:
-    """Stage 3: build & fit sklearn Pipeline, apply SMOTE, save artifacts."""
+    """Stage 3: build & fit sklearn preprocessing Pipeline, save artifacts."""
     logger = get_run_logger()
     os.chdir(PROJECT_ROOT)
 
@@ -184,7 +183,6 @@ def register_model_task(_upstream: bool) -> str:
 @flow(
     name="adult_income_training_pipeline",
     description="End-to-end MLOps training pipeline. Halts on first task failure.",
-    task_runner=SequentialTaskRunner(),
     log_prints=True,
 )
 def training_pipeline() -> str:

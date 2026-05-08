@@ -1,4 +1,5 @@
 # Data files - tracked by DVC, never commit to Git
+dvc-remotes/
 data/raw/
 data/processed/
 data/splits/

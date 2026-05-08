@@ -9,7 +9,8 @@ Endpoints:
 import os
 import pickle
 import time
-from typing import List, Optional
+from contextlib import asynccontextmanager
+from typing import List, Literal, Optional
 
 import mlflow
 import mlflow.sklearn
@@ -36,10 +37,9 @@ def load_params() -> dict:
 
 
 params = load_params()
-app = FastAPI(title="Adult Income Classifier", version="1.0.0")
 
 # ------------------------------------------------------------------ #
-# Prometheus metrics (5 required)
+# Prometheus metrics
 # ------------------------------------------------------------------ #
 PREDICTION_COUNTER = Counter(
     "predictions_total", "Inference count by predicted class", ["predicted_class"]
@@ -74,26 +74,146 @@ model_info: dict = {
     "version": "unknown",
     "stage": params["serving"]["model_stage"],
 }
+load_error: Optional[str] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    result = load_model()
+    if hasattr(result, "__await__"):
+        await result
+    yield
+
+
+app = FastAPI(title="Adult Income Classifier", version="1.0.0", lifespan=lifespan)
 
 
 # ------------------------------------------------------------------ #
 # Schemas
 # ------------------------------------------------------------------ #
+Workclass = Literal[
+    "Private",
+    "Self-emp-not-inc",
+    "Self-emp-inc",
+    "Federal-gov",
+    "Local-gov",
+    "State-gov",
+    "Without-pay",
+    "Never-worked",
+]
+Education = Literal[
+    "Bachelors",
+    "Some-college",
+    "11th",
+    "HS-grad",
+    "Prof-school",
+    "Assoc-acdm",
+    "Assoc-voc",
+    "9th",
+    "7th-8th",
+    "12th",
+    "Masters",
+    "1st-4th",
+    "10th",
+    "Doctorate",
+    "5th-6th",
+    "Preschool",
+]
+MaritalStatus = Literal[
+    "Married-civ-spouse",
+    "Divorced",
+    "Never-married",
+    "Separated",
+    "Widowed",
+    "Married-spouse-absent",
+    "Married-AF-spouse",
+]
+Occupation = Literal[
+    "Tech-support",
+    "Craft-repair",
+    "Other-service",
+    "Sales",
+    "Exec-managerial",
+    "Prof-specialty",
+    "Handlers-cleaners",
+    "Machine-op-inspct",
+    "Adm-clerical",
+    "Farming-fishing",
+    "Transport-moving",
+    "Priv-house-serv",
+    "Protective-serv",
+    "Armed-Forces",
+]
+Relationship = Literal[
+    "Wife",
+    "Own-child",
+    "Husband",
+    "Not-in-family",
+    "Other-relative",
+    "Unmarried",
+]
+Race = Literal["White", "Asian-Pac-Islander", "Amer-Indian-Eskimo", "Other", "Black"]
+Sex = Literal["Female", "Male"]
+NativeCountry = Literal[
+    "United-States",
+    "Cambodia",
+    "England",
+    "Puerto-Rico",
+    "Canada",
+    "Germany",
+    "Outlying-US(Guam-USVI-etc)",
+    "India",
+    "Japan",
+    "Greece",
+    "South",
+    "China",
+    "Cuba",
+    "Iran",
+    "Honduras",
+    "Philippines",
+    "Italy",
+    "Poland",
+    "Jamaica",
+    "Vietnam",
+    "Mexico",
+    "Portugal",
+    "Ireland",
+    "France",
+    "Dominican-Republic",
+    "Laos",
+    "Ecuador",
+    "Taiwan",
+    "Haiti",
+    "Columbia",
+    "Hungary",
+    "Guatemala",
+    "Nicaragua",
+    "Scotland",
+    "Thailand",
+    "Yugoslavia",
+    "El-Salvador",
+    "Trinadad&Tobago",
+    "Peru",
+    "Hong",
+    "Holand-Netherlands",
+]
+
+
 class PredictRequest(BaseModel):
     age: int = Field(..., ge=17, le=100)
-    workclass: Optional[str] = None
+    workclass: Optional[Workclass] = None
     fnlwgt: int = Field(..., gt=0)
-    education: str
+    education: Education
     education_num: int = Field(..., alias="education-num", ge=1, le=16)
-    marital_status: str = Field(..., alias="marital-status")
-    occupation: Optional[str] = None
-    relationship: str
-    race: str
-    sex: str
+    marital_status: MaritalStatus = Field(..., alias="marital-status")
+    occupation: Optional[Occupation] = None
+    relationship: Relationship
+    race: Race
+    sex: Sex
     capital_gain: int = Field(..., alias="capital-gain", ge=0)
     capital_loss: int = Field(..., alias="capital-loss", ge=0)
     hours_per_week: int = Field(..., alias="hours-per-week", ge=1, le=99)
-    native_country: Optional[str] = Field(None, alias="native-country")
+    native_country: Optional[NativeCountry] = Field(None, alias="native-country")
 
     class Config:
         populate_by_name = True
@@ -138,15 +258,16 @@ def record_to_df(record: PredictRequest) -> pd.DataFrame:
 # ------------------------------------------------------------------ #
 # Startup
 # ------------------------------------------------------------------ #
-@app.on_event("startup")
 async def load_model() -> None:
-    global model, preprocessor
+    global model, preprocessor, load_error
+    load_error = None
 
     tracking_uri = os.environ.get(
         "MLFLOW_TRACKING_URI", params["training"]["mlflow_tracking_uri"]
     )
     mlflow.set_tracking_uri(tracking_uri)
 
+    model_loaded = False
     try:
         model_uri = (
             f"models:/{params['serving']['model_name']}"
@@ -162,18 +283,32 @@ async def load_model() -> None:
         if versions:
             model_info["version"] = versions[0].version
             MODEL_VERSION_GAUGE.set(float(versions[0].version))
-    except Exception:
+        model_loaded = True
+    except Exception as mlflow_exc:
         # Fallback: load from disk (useful in CI / Docker without MLflow)
-        model_path = params["preprocessing"]["best_model_path"]
-        with open(model_path, "rb") as f:
-            model = pickle.load(f)
-        model_info["version"] = "local"
+        try:
+            model_path = params["preprocessing"]["best_model_path"]
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+            model_info["version"] = "local"
+            model_loaded = True
+        except Exception as local_exc:
+            load_error = (
+                f"MLflow load failed: {mlflow_exc}. "
+                f"Local model load failed: {local_exc}."
+            )
 
-    pipeline_path = params["preprocessing"]["pipeline_path"]
-    with open(pipeline_path, "rb") as f:
-        preprocessor = pickle.load(f)
+    try:
+        pipeline_path = params["preprocessing"]["pipeline_path"]
+        with open(pipeline_path, "rb") as f:
+            preprocessor = pickle.load(f)
+    except Exception as pipeline_exc:
+        load_error = f"{load_error or ''} Preprocessor load failed: {pipeline_exc}."
 
-    print(f"Model loaded: {model_info['name']} v{model_info['version']}")
+    if model_loaded and preprocessor is not None and load_error is None:
+        print(f"Model loaded: {model_info['name']} v{model_info['version']}")
+    else:
+        print(f"Model failed to load: {load_error or 'unknown error'}")
 
 
 # ------------------------------------------------------------------ #
@@ -181,6 +316,17 @@ async def load_model() -> None:
 # ------------------------------------------------------------------ #
 @app.get("/health")
 def health():
+    if model is None or preprocessor is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "model_not_loaded",
+                "model_name": model_info["name"],
+                "model_version": model_info["version"],
+                "model_stage": model_info["stage"],
+                "error": load_error,
+            },
+        )
     return {
         "status": "ok",
         "model_name": model_info["name"],

@@ -1,9 +1,46 @@
 # Adult Income MLOps Pipeline
 
-End-to-end MLOps pipeline for the DDSC611 final project — ESLSCA University, Spring 2026.
+End-to-end MLOps system for the DDSC611 final project — ESLSCA University, Spring 2026.
 
 **Dataset:** UCI Adult Income (Census Income) — binary classification (income >50K vs <=50K)  
-**Stack:** DVC · MLflow · scikit-learn · XGBoost · FastAPI · Evidently · Prometheus · Docker
+**Stack:** DVC · MLflow · scikit-learn · XGBoost · FastAPI · Evidently · Prometheus · Docker · Prefect · Streamlit
+
+---
+
+## Executive Summary
+
+This project turns the UCI Adult Income dataset into a reproducible, observable,
+and demo-ready machine learning system. The focus is not only model accuracy:
+the repository demonstrates the full model lifecycle, including data/version
+control, schema validation, feature engineering, experiment tracking, model
+registry promotion, API serving, monitoring, CI/CD gates, and orchestration.
+
+Current production model snapshot:
+
+| Area | Current State |
+|---|---|
+| Best model | XGBoost |
+| Held-out F1 | 0.7097 |
+| Accuracy | 0.8541 |
+| ROC-AUC | 0.9196 |
+| Registry | Current MLflow Production version |
+| Tests | 39 passing |
+| Coverage | 72.38% whole-`src` coverage |
+| Drift action | `RETRAIN_REQUIRED` alert linked to Prefect retraining |
+
+Key engineering choices:
+
+- DVC reproduces the prepare → preprocess → train pipeline.
+- MLflow tracks Logistic Regression, Random Forest, and XGBoost runs and stores
+  the promoted model version.
+- SMOTE runs inside the cross-validation pipeline to avoid train/validation
+  leakage during model selection.
+- FastAPI validates both numeric ranges and categorical domains before
+  inference.
+- Evidently writes a drift alert that includes the manual Prefect retraining
+  command.
+- Streamlit presents a polished local demo for predictions, MLflow runs,
+  monitoring, API health, model card, and CI/CD status.
 
 ---
 
@@ -26,26 +63,27 @@ Raw Data (DVC)
     │
     ▼
 [Monitoring]          ── run_monitoring.py ──► 2 Evidently reports + Prometheus
+    │
+    └── drift_alert.json ──► Prefect deployment trigger
 ```
 
 ---
 
-## Quickstart (3 commands)
+## Quickstart
 
-Requires Python 3.10. Python 3.12+ is not supported by all dependencies.
+Requires Python 3.10 or 3.11. Some pinned dependencies are not compatible with
+Python 3.12+.
 
 ```bash
-# 1. Install dependencies
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Copy dataset files into data/raw/
-#    (place adult.data and adult.test from the UCI dataset here)
-
-# 3. Run the full pipeline
+# Copy adult.data and adult.test into data/raw/, then run:
 dvc repro && uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
 ```
 
-The API is now live at `http://localhost:8000`. Test it:
+The API is then available at `http://localhost:8000`.
 
 ```bash
 curl -X POST http://localhost:8000/predict \
@@ -59,6 +97,9 @@ curl -X POST http://localhost:8000/predict \
     "hours-per-week": 40, "native-country": "United-States"
   }'
 ```
+
+Invalid categorical values such as `"race": "Alien"` or `"sex": "Dragon"` are
+rejected with HTTP 422 before inference.
 
 ---
 
@@ -76,12 +117,16 @@ pip install -r requirements.txt
 ### 2. Configure DVC remote
 
 ```bash
-mkdir -p ~/dvc-remotes/adult-income-mlops
-dvc remote add -d myremote ~/dvc-remotes/adult-income-mlops
+mkdir -p dvc-remotes/adult-income-mlops
+dvc remote modify myremote url dvc-remotes/adult-income-mlops
 dvc remote list
 ```
 
-This repository uses the default DVC remote `myremote` at `~/dvc-remotes/adult-income-mlops` for local reproduction. After generating or updating DVC-tracked data artifacts, run `dvc push`; on another machine with the same remote available, run `dvc pull`.
+This repository uses the default DVC remote `myremote` at the repo-local path
+`dvc-remotes/adult-income-mlops` as resolved by `dvc remote list`, avoiding
+machine-specific absolute paths in the checked-in config.
+For a team or cloud remote, point it explicitly at your shared location:
+`dvc remote modify myremote url <new-path-or-remote-url>`.
 
 ### 3. Add data
 
@@ -132,15 +177,20 @@ source .venv/bin/activate
 streamlit run streamlit_app.py
 ```
 
-The app provides three tabs:
+The app provides eight sidebar pages:
 
-- **Single Prediction** — form for one Adult Income record with input
-  validation, an "Use Example Record" selector with several profiles, a
-  "Reset Inputs" button, predicted class, and `predict_proba` for `>50K`.
-- **Batch Prediction** — upload a CSV, get predictions back, download as CSV.
-  Missing/extra columns and bad values are reported as friendly messages.
-- **Model Info** — known metrics, artifact health checks, model parameters,
-  and the model card.
+- **Pipeline Overview** — metrics, architecture, and live system status.
+- **Single Prediction** — 14-field form, example profiles, confidence gauge,
+  feature importance chart, and local model prediction.
+- **Batch Prediction** — CSV upload, colored results, summary stats, pie chart,
+  and downloadable predictions.
+- **MLflow Experiments** — compares Logistic Regression, Random Forest, and
+  XGBoost from `docs/experiment_log.csv`.
+- **Monitoring & Drift Detection** — Evidently report iframe, drift scores,
+  `RETRAIN_REQUIRED` alert state, and manual Prefect retraining trigger.
+- **Live API Monitor** — FastAPI health, Prometheus metrics, and test request.
+- **Model Card** — renders `docs/model_card.md` plus subgroup F1 chart.
+- **CI/CD Status** — visual pipeline stages and coverage summary.
 
 If the app reports missing artifacts, run:
 
@@ -168,18 +218,78 @@ curl http://localhost:5000  # MLflow UI
 
 ---
 
+## Prefect Orchestration (Bonus B)
+
+Install orchestration-only dependencies when you want to run the scheduled
+training flow locally:
+
+```bash
+pip install -r requirements-orchestration.txt
+prefect server start
+MLFLOW_TRACKING_URI=sqlite:///mlflow.db python orchestration/deploy.py
+prefect deployment run "adult_income_training_pipeline/adult-income-weekly"
+```
+
+The deployment `adult_income_training_pipeline / adult-income-weekly` runs the
+six-stage flow: prepare → validate → preprocess → train → evaluate → register.
+The latest demo run completed successfully as `tan-hornet` in the Prefect UI.
+
+When monitoring writes `monitoring/evidently_reports/drift_alert.json` with
+`RETRAIN_REQUIRED`, the alert includes the linked Prefect deployment and manual
+trigger command:
+
+```bash
+prefect deployment run "adult_income_training_pipeline/adult-income-weekly"
+```
+
+The Streamlit **Monitoring & Drift Detection** page also shows this command and
+provides a button to submit the Prefect retraining run after the Prefect server
+and deployment are running.
+
+---
+
 ## Running Tests
 
 ```bash
-# Unit tests + coverage
-pytest tests/unit/ tests/data/ --cov=src --cov-report=term-missing
+# Unit tests
+pytest tests/unit/ tests/data/
 
 # Integration tests
 pytest tests/integration/
 
-# All tests
-pytest tests/ --cov=src --cov-report=term-missing
+# All tests + whole-src coverage gate
+pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=70
 ```
+
+---
+
+## Documentation Artifacts
+
+- [Model Card](docs/model_card.md) — model version, intended use,
+  hyperparameters, evaluation metrics, subgroup performance, limitations, and
+  ethical guidance.
+- [Data Card](docs/data_card.md) — dataset source, schema, splits, class
+  distribution, preprocessing decisions, drift simulation, and known biases.
+- [Experiment Log](docs/experiment_log.csv) — sanitized MLflow export with
+  metrics and hyperparameters for the tracked model families.
+
+---
+
+## Production Hardening Notes
+
+This project is designed as a course-grade, demo-ready MLOps system. Before any
+real deployment, the main hardening steps would be:
+
+- Use a separate validation split for model-family selection and reserve the
+  final test set for one-time reporting.
+- Compare SMOTE against XGBoost `scale_pos_weight`, class weighting, or
+  SMOTENC for categorical-aware imbalance handling.
+- Add fairness gates for recall/FPR gaps by sex and race before registry
+  promotion.
+- Route drift alerts to an approval workflow before triggering retraining in
+  an unattended environment.
+- Replace local DVC/MLflow artifact storage with a shared object store for
+  team or cloud deployment.
 
 ---
 
@@ -201,12 +311,12 @@ pytest tests/ --cov=src --cov-report=term-missing
 │   └── serving/                 # app.py (FastAPI)
 ├── monitoring/
 │   ├── run_monitoring.py        # Evidently reports + drift threshold logic
-│   ├── evidently_reports/       # baseline_report.html, drift_report.html
+│   ├── evidently_reports/       # reports + actionable drift_alert.json
 │   └── prometheus/              # prometheus.yml
 ├── tests/
-│   ├── unit/                    # test_preprocessing.py
-│   ├── integration/             # test_api.py
-│   └── data/                    # test_data_validation.py
+│   ├── unit/                    # preprocessing + pipeline script tests
+│   ├── integration/             # FastAPI contract tests
+│   └── data/                    # Pandera validation tests
 ├── docs/
 │   ├── model_card.md
 │   ├── data_card.md
@@ -216,7 +326,8 @@ pytest tests/ --cov=src --cov-report=term-missing
 ├── dvc.lock                     # reproducibility lock (committed to Git)
 ├── Dockerfile
 ├── docker-compose.yml
-└── requirements.txt             # pinned versions
+├── requirements.txt             # pinned core/runtime versions
+└── requirements-orchestration.txt # Prefect-only orchestration deps
 ```
 
 ---
@@ -229,7 +340,7 @@ After training, export all runs:
 import mlflow
 import pandas as pd
 
-mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 runs = mlflow.search_runs(experiment_names=["adult_income_classification"])
 runs.to_csv("docs/experiment_log.csv", index=False)
 ```
@@ -243,12 +354,16 @@ GitHub Actions runs on every push to `main` and every PR:
 | Stage | Tool | Fails if |
 |---|---|---|
 | Lint | flake8 | Any style violation |
-| Unit Tests | pytest + coverage | Coverage < 70% |
+| Unit Tests | pytest | Unit/data test failure |
 | Data Validation | Pandera | Schema violations |
+| Integration Tests | pytest | FastAPI contract regression |
+| Coverage | pytest-cov | Whole-`src` coverage < 70% |
 | Train | DVC + MLflow | Pipeline or training failure |
 | Model Validation | evaluate.py | F1 < 0.60 |
 
-Branch protection on `main` requires all stages to pass before merging.
+The workflow is suitable for branch protection on `main`: lint, unit/data
+tests, integration tests, coverage, training, and model validation can all be
+required before merging.
 
 ---
 

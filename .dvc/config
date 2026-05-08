@@ -1,4 +1,4 @@
 [core]
     remote = myremote
 ['remote "myremote"']
-    url = /Users/mohamedehabelmolla/dvc-remotes/adult-income-mlops
+    url = ../dvc-remotes/adult-income-mlops

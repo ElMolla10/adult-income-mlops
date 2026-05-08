@@ -26,10 +26,8 @@ stages:
       - data/processed/pipeline.pkl
       - data/splits/X_train.csv
       - data/splits/X_test.csv
-      - data/splits/X_train_resampled.csv
       - data/splits/y_train.csv
       - data/splits/y_test.csv
-      - data/splits/y_train_resampled.csv
       - data/splits/reference.csv
       - data/splits/production.csv
     params:

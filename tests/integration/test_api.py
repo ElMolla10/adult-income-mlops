@@ -34,7 +34,7 @@ BATCH_REQUEST = {"records": [VALID_RECORD, VALID_RECORD]}
 
 def _mock_preprocessor():
     m = mock.MagicMock()
-    m.transform.return_value = np.zeros((1, 108))
+    m.transform.return_value = np.zeros((1, 105))
     return m
 
 
@@ -80,6 +80,19 @@ def test_health_status_is_ok(client):
     assert data["status"] == "ok"
 
 
+def test_health_returns_503_when_model_not_loaded(client):
+    import src.serving.app as app_module
+
+    app_module.model = None
+    app_module.preprocessor = None
+    app_module.load_error = "missing artifacts"
+
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["status"] == "model_not_loaded"
+
+
 # ------------------------------------------------------------------ #
 # /predict
 # ------------------------------------------------------------------ #
@@ -116,6 +129,25 @@ def test_predict_age_out_of_range_returns_422(client):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("workclass", "Gig-economy"),
+        ("education", "Bootcamp"),
+        ("marital-status", "Complicated"),
+        ("occupation", "Influencer"),
+        ("relationship", "Roommate"),
+        ("race", "Alien"),
+        ("sex", "Dragon"),
+        ("native-country", "Atlantis"),
+    ],
+)
+def test_predict_invalid_category_returns_422(client, field, value):
+    bad = {**VALID_RECORD, field: value}
+    response = client.post("/predict", json=bad)
+    assert response.status_code == 422
+
+
 # ------------------------------------------------------------------ #
 # /predict/batch
 # ------------------------------------------------------------------ #
@@ -127,3 +159,9 @@ def test_batch_predict_returns_200(client):
 def test_batch_predict_returns_correct_count(client):
     data = client.post("/predict/batch", json=BATCH_REQUEST).json()
     assert len(data["predictions"]) == 2
+
+
+def test_batch_predict_invalid_category_returns_422(client):
+    bad_record = {**VALID_RECORD, "race": "Alien"}
+    response = client.post("/predict/batch", json={"records": [VALID_RECORD, bad_record]})
+    assert response.status_code == 422

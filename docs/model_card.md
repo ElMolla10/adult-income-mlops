@@ -5,12 +5,24 @@
 | Field | Value |
 |---|---|
 | **Model name** | adult_income_classifier |
-| **Version** | MLflow Model Registry version 3, Production |
+| **Version** | Current MLflow Model Registry Production version |
 | **Task** | Binary classification |
 | **Output** | `>50K` or `<=50K` (annual income) |
 | **Algorithm** | XGBoost, selected by highest F1 among Logistic Regression, Random Forest, and XGBoost |
 | **Framework** | scikit-learn / XGBoost |
-| **Training date** | 2026-05-03 10:28:50 UTC |
+| **Training date** | 2026-05-08 13:01:25 UTC |
+
+XGBoost was selected over RandomForest (F1=0.6892) and LogisticRegression (F1=0.6698) based on highest F1 score on the held-out test set.
+
+### Best Hyperparameters
+
+| Hyperparameter | Value |
+|---|---:|
+| `model_type` | XGBoost |
+| `n_estimators` | 200 |
+| `max_depth` | 3 |
+| `learning_rate` | 0.3 |
+| `subsample` | 0.8 |
 
 ---
 
@@ -37,6 +49,12 @@
 
 **Features used:** age, workclass, fnlwgt, education, education-num, marital-status, occupation, relationship, race, sex, capital-gain, capital-loss, hours-per-week, native-country.
 
+## Preprocessing Summary
+
+The training pipeline applies the saved preprocessing workflow in `data/processed/pipeline.pkl`, including imputation, one-hot encoding, and scaling. SMOTE is applied inside the model-selection pipeline during `RandomizedSearchCV`, so synthetic samples are generated separately within each cross-validation fold. The same `pipeline.pkl` artifact is loaded during serving, eliminating train/serve skew between model training, FastAPI inference, and the Streamlit demo.
+
+The serving API validates categorical inputs against the known Adult Income category sets before inference. Invalid categories are rejected with a 422 response instead of being silently encoded as unknown one-hot values.
+
 ---
 
 ## Evaluation Metrics
@@ -45,11 +63,11 @@
 
 | Metric | Value |
 |---|---|
-| Accuracy | 0.8515 |
-| F1 Score | 0.7117 |
-| Precision | 0.6573 |
-| Recall | 0.7759 |
-| ROC-AUC | 0.9204 |
+| Accuracy | 0.8541 |
+| F1 Score | 0.7097 |
+| Precision | 0.6697 |
+| Recall | 0.7548 |
+| ROC-AUC | 0.9196 |
 
 ### Per-Subgroup Metrics
 
@@ -57,13 +75,13 @@ Metrics below are computed with `classification_report` on `adult.test` filtered
 
 | Attribute | Group | Rows | Positive Rate | Accuracy | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| sex | Female | 5,421 | 0.1088 | 0.9290 | 0.6740 | 0.6729 | 0.6735 |
-| sex | Male | 10,860 | 0.2998 | 0.8128 | 0.6548 | 0.7945 | 0.7179 |
-| race | Amer-Indian-Eskimo | 159 | 0.1195 | 0.9119 | 0.6923 | 0.4737 | 0.5625 |
-| race | Asian-Pac-Islander | 480 | 0.2771 | 0.8458 | 0.7323 | 0.6992 | 0.7154 |
-| race | Black | 1,561 | 0.1147 | 0.9321 | 0.7355 | 0.6369 | 0.6826 |
-| race | Other | 135 | 0.1852 | 0.8889 | 0.8125 | 0.5200 | 0.6341 |
-| race | White | 13,946 | 0.2503 | 0.8416 | 0.6515 | 0.7894 | 0.7138 |
+| sex | Female | 5,421 | 0.1088 | 0.9299 | 0.6895 | 0.6475 | 0.6678 |
+| sex | Male | 10,860 | 0.2998 | 0.8163 | 0.6668 | 0.7743 | 0.7165 |
+| race | Amer-Indian-Eskimo | 159 | 0.1195 | 0.9119 | 0.7778 | 0.3684 | 0.5000 |
+| race | Asian-Pac-Islander | 480 | 0.2771 | 0.8354 | 0.7177 | 0.6692 | 0.6926 |
+| race | Black | 1,561 | 0.1147 | 0.9263 | 0.7105 | 0.6034 | 0.6526 |
+| race | Other | 135 | 0.1852 | 0.8963 | 0.9231 | 0.4800 | 0.6316 |
+| race | White | 13,946 | 0.2503 | 0.8456 | 0.6656 | 0.7699 | 0.7140 |
 
 > **Note:** The model inherits the historical biases present in 1994 Census data. Income disparity by sex and race is a data artefact, not a model design choice.
 

@@ -12,6 +12,8 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import yaml
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 from mlflow.tracking import MlflowClient
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -32,9 +34,9 @@ def load_params() -> dict:
 
 
 def load_splits():
-    X_train = pd.read_csv("data/splits/X_train_resampled.csv").values
+    X_train = pd.read_csv("data/splits/X_train.csv").values
     X_test = pd.read_csv("data/splits/X_test.csv").values
-    y_train = pd.read_csv("data/splits/y_train_resampled.csv").values.ravel()
+    y_train = pd.read_csv("data/splits/y_train.csv").values.ravel()
     y_test = pd.read_csv("data/splits/y_test.csv").values.ravel()
     return X_train, X_test, y_train, y_test
 
@@ -64,9 +66,20 @@ def run_experiment(
     with mlflow.start_run(run_name=model_name, experiment_id=experiment_id) as run:
         mlflow.log_param("model_type", model_name)
 
+        estimator = ImbPipeline(
+            steps=[
+                ("smote", SMOTE(random_state=params["preprocessing"]["random_state"])),
+                ("model", model),
+            ]
+        )
+        search_grid = {
+            f"model__{key}": value
+            for key, value in param_grid.items()
+        }
+
         search = RandomizedSearchCV(
-            estimator=model,
-            param_distributions=param_grid,
+            estimator=estimator,
+            param_distributions=search_grid,
             n_iter=params["training"]["hpo_n_iter"],
             cv=params["training"]["hpo_cv"],
             scoring=params["training"]["metric"],
@@ -76,7 +89,9 @@ def run_experiment(
         search.fit(X_train, y_train)
         best_model = search.best_estimator_
 
-        mlflow.log_params(search.best_params_)
+        mlflow.log_params(
+            {key.replace("model__", ""): value for key, value in search.best_params_.items()}
+        )
 
         y_pred = best_model.predict(X_test)
         y_prob = best_model.predict_proba(X_test)[:, 1]

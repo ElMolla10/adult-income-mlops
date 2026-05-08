@@ -1,7 +1,7 @@
 """
 Register the training flow as a schedulable Prefect deployment.
 
-This uses Prefect 2.x's `flow.serve()` API which:
+This uses Prefect 3.x's `flow.serve()` API which:
   1. Creates a deployment named 'adult-income-weekly'
   2. Registers a weekly cron schedule (Sundays 02:00 UTC)
   3. Starts a long-running worker that polls for triggered runs

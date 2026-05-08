@@ -9,7 +9,6 @@ import sys
 
 import pandas as pd
 import yaml
-from imblearn.over_sampling import SMOTE
 
 sys.path.insert(0, os.getcwd())
 
@@ -58,7 +57,6 @@ def featurize() -> None:
     params = load_params()
     target = params["data"]["target_column"]
     positive_label = params["data"]["positive_label"]
-    random_state = params["preprocessing"]["random_state"]
 
     train_df = pd.read_csv(params["data"]["processed_train"])
     test_df = pd.read_csv(params["data"]["processed_test"])
@@ -73,14 +71,8 @@ def featurize() -> None:
     X_train_t = preprocessor.fit_transform(X_train)
     X_test_t = preprocessor.transform(X_test)
 
-    print("Class distribution before SMOTE:")
+    print("Class distribution before model-time SMOTE:")
     print(y_train.value_counts().sort_index().to_string())
-
-    smote = SMOTE(random_state=random_state)
-    X_train_resampled, y_train_resampled = smote.fit_resample(X_train_t, y_train)
-
-    print("Class distribution after SMOTE:")
-    print(pd.Series(y_train_resampled).value_counts().sort_index().to_string())
 
     # Save fitted preprocessor pipeline
     os.makedirs("data/processed", exist_ok=True)
@@ -92,14 +84,8 @@ def featurize() -> None:
     os.makedirs("data/splits", exist_ok=True)
     pd.DataFrame(X_train_t).to_csv("data/splits/X_train.csv", index=False)
     pd.DataFrame(X_test_t).to_csv("data/splits/X_test.csv", index=False)
-    pd.DataFrame(X_train_resampled).to_csv(
-        "data/splits/X_train_resampled.csv", index=False
-    )
     y_train.to_csv("data/splits/y_train.csv", index=False)
     y_test.to_csv("data/splits/y_test.csv", index=False)
-    pd.Series(y_train_resampled, name=target).to_csv(
-        "data/splits/y_train_resampled.csv", index=False
-    )
 
     # ------------------------------------------------------------------ #
     # Drift simulation
@@ -115,7 +101,6 @@ def featurize() -> None:
     production_df.to_csv(params["data"]["production_data"], index=False)
 
     print(f"Train original : {X_train_t.shape}")
-    print(f"Train resampled: {X_train_resampled.shape}")
     print(f"Test           : {X_test_t.shape}")
     print(f"Reference rows: {train_df.shape[0]}")
     print(f"Production rows (drifted): {production_df.shape[0]}")

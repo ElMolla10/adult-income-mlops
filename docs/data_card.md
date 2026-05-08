@@ -40,8 +40,15 @@
 | Split | File | Rows | Purpose |
 |---|---|---|---|
 | Train (Reference) | `adult.data` | 32,561 | Model training + drift reference |
-| Test | `adult.test` | 16,282 | Model evaluation + production simulation |
-| Production (drifted) | `data/splits/production.csv` | ~10,860 | Drift monitoring (Male + White subgroup filter) |
+| Test | `adult.test` | 16,281 | Model evaluation + production simulation |
+| Production (drifted) | `data/splits/production.csv` | 9,561 | Drift monitoring (Male + White subgroup filter) |
+
+## Class Distribution
+
+| Split | `<=50K` Count | `<=50K` Share | `>50K` Count | `>50K` Share |
+|---|---:|---:|---:|---:|
+| Train | 24,720 | 75.9190% | 7,841 | 24.0810% |
+| Test | 12,435 | 76.3774% | 3,846 | 23.6226% |
 
 ---
 
@@ -54,6 +61,7 @@
 3. **Encoding:** All categorical features are one-hot encoded with `handle_unknown='ignore'` to gracefully handle unseen categories at inference time.
 4. **Label fix:** The `adult.test` file adds a trailing `.` to income labels (e.g. `<=50K.`). This is stripped on load.
 5. **Target encoding:** `>50K` → 1, `<=50K` → 0 for model training.
+6. **Class imbalance:** SMOTE is applied inside the model-selection pipeline during cross-validation, not before the CV split, so synthetic samples do not leak across folds.
 
 ---
 

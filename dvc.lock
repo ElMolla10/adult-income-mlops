@@ -64,8 +64,8 @@ stages:
       size: 3514344
     - path: src/features/feature_engineering.py
       hash: md5
-      md5: 99e8b54c820e4693b3318fafe618f177
-      size: 4521
+      md5: 0e5a5800dc71bce3291e8095c9efa630
+      size: 3897
     - path: src/features/transformers.py
       hash: md5
       md5: 39c99288b6d0b0d0022940655d57e1bf
@@ -103,10 +103,6 @@ stages:
       hash: md5
       md5: c762b887a5076a3f01e32966f39e3069
       size: 16832447
-    - path: data/splits/X_train_resampled.csv
-      hash: md5
-      md5: 4d59ea9d34be4b329ff0a7e453831ea8
-      size: 25839246
     - path: data/splits/production.csv
       hash: md5
       md5: 8b180e199643b1399d94c0edbf404a00
@@ -123,10 +119,6 @@ stages:
       hash: md5
       md5: 96aae77f7320bb50d81403d086eee728
       size: 65129
-    - path: data/splits/y_train_resampled.csv
-      hash: md5
-      md5: 5d9354939680a91ef1ad69068b6a6f6a
-      size: 98887
   train:
     cmd: python src/training/train.py
     deps:
@@ -152,8 +144,8 @@ stages:
       size: 65129
     - path: src/training/train.py
       hash: md5
-      md5: c69bf802c9d536d6967ba50082d65fb2
-      size: 6436
+      md5: 00eb1bdbda4681abbbbf8058aaf008aa
+      size: 6918
     params:
       configs/params.yaml:
         training.experiment_name: adult_income_classification
@@ -203,5 +195,5 @@ stages:
     outs:
     - path: models/best_model.pkl
       hash: md5
-      md5: cf546d8000408d94c9e0f0526e95ea59
-      size: 851975
+      md5: a82249ce7288b1071ea75297d3a93e1a
+      size: 6815894
