@@ -33,8 +33,8 @@ Key engineering choices:
 - DVC reproduces the prepare → preprocess → train pipeline.
 - MLflow tracks Logistic Regression, Random Forest, and XGBoost runs and stores
   the promoted model version.
-- SMOTE runs inside the cross-validation pipeline to avoid train/validation
-  leakage during model selection.
+- XGBoost trains on the original class distribution and stores a calibrated
+  probability threshold for serving.
 - FastAPI validates both numeric ranges and categorical domains before
   inference.
 - Evidently writes a drift alert that includes the manual Prefect retraining
@@ -282,8 +282,8 @@ real deployment, the main hardening steps would be:
 
 - Use a separate validation split for model-family selection and reserve the
   final test set for one-time reporting.
-- Compare SMOTE against XGBoost `scale_pos_weight`, class weighting, or
-  SMOTENC for categorical-aware imbalance handling.
+- Compare calibrated thresholds against XGBoost `scale_pos_weight`, class
+  weighting, or SMOTENC for categorical-aware imbalance handling.
 - Add fairness gates for recall/FPR gaps by sex and race before registry
   promotion.
 - Route drift alerts to an approval workflow before triggering retraining in
@@ -387,7 +387,6 @@ required before merging.
 - scikit-learn — preprocessing and model training: https://scikit-learn.org
 - XGBoost — gradient boosting classifier: https://xgboost.readthedocs.io
 - Prometheus — metrics collection: https://prometheus.io
-- imbalanced-learn (SMOTE): https://imbalanced-learn.org
 - Pandera — data validation: https://pandera.readthedocs.io
 
 ### AI Assistance

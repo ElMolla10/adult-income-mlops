@@ -41,12 +41,17 @@ def load_splits():
 
 def compute_metrics(y_true, y_prob: np.ndarray, threshold: float) -> dict:
     y_pred = (y_prob >= threshold).astype(int)
+    try:
+        roc_auc = roc_auc_score(y_true, y_prob)
+    except ValueError:
+        roc_auc = float("nan")
+
     return {
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
-        "f1": round(f1_score(y_true, y_pred), 4),
-        "precision": round(precision_score(y_true, y_pred), 4),
-        "recall": round(recall_score(y_true, y_pred), 4),
-        "roc_auc": round(roc_auc_score(y_true, y_prob), 4),
+        "f1": round(f1_score(y_true, y_pred, zero_division=0), 4),
+        "precision": round(precision_score(y_true, y_pred, zero_division=0), 4),
+        "recall": round(recall_score(y_true, y_pred, zero_division=0), 4),
+        "roc_auc": round(roc_auc, 4),
         "positive_rate": round(float(np.mean(y_pred)), 4),
     }
 
@@ -67,6 +72,33 @@ def choose_threshold(y_true, y_prob: np.ndarray, candidates: list[float]) -> flo
     return best_threshold
 
 
+def calibration_split(X_train, y_train, calibration_size: float, random_state: int):
+    """Return fit/calibration splits, falling back for tiny datasets."""
+    classes, class_counts = np.unique(y_train, return_counts=True)
+    n_classes = len(classes)
+    n_rows = len(y_train)
+    n_calibration = int(np.ceil(n_rows * calibration_size))
+    n_fit = n_rows - n_calibration
+
+    can_stratify = (
+        0.0 < calibration_size < 1.0
+        and n_classes > 1
+        and class_counts.min() >= 2
+        and n_calibration >= n_classes
+        and n_fit >= n_classes
+    )
+    if not can_stratify:
+        return X_train, X_train, y_train, y_train
+
+    return train_test_split(
+        X_train,
+        y_train,
+        test_size=calibration_size,
+        random_state=random_state,
+        stratify=y_train,
+    )
+
+
 def run_experiment(
     model_name: str,
     model,
@@ -82,15 +114,16 @@ def run_experiment(
     with mlflow.start_run(run_name=model_name, experiment_id=experiment_id) as run:
         mlflow.log_param("model_type", model_name)
 
-        X_fit, X_cal, y_fit, y_cal = train_test_split(
+        training_params = params.get("training", {})
+        preprocessing_params = params.get("preprocessing", {})
+        X_fit, X_cal, y_fit, y_cal = calibration_split(
             X_train,
             y_train,
-            test_size=params["training"]["calibration_size"],
-            random_state=params["preprocessing"]["random_state"],
-            stratify=y_train,
+            calibration_size=training_params.get("calibration_size", 0.2),
+            random_state=preprocessing_params.get("random_state", 42),
         )
         n_iter = min(
-            params["training"]["hpo_n_iter"],
+            training_params["hpo_n_iter"],
             len(list(ParameterGrid(param_grid))),
         )
 
@@ -98,8 +131,8 @@ def run_experiment(
             estimator=model,
             param_distributions=param_grid,
             n_iter=n_iter,
-            cv=params["training"]["hpo_cv"],
-            scoring=params["training"]["metric"],
+            cv=training_params["hpo_cv"],
+            scoring=training_params["metric"],
             random_state=42,
             n_jobs=-1,
         )
@@ -107,7 +140,7 @@ def run_experiment(
         best_model = search.best_estimator_
 
         mlflow.log_params(search.best_params_)
-        threshold_candidates = params["training"]["threshold_candidates"]
+        threshold_candidates = training_params.get("threshold_candidates", [0.5])
         calibration_prob = best_model.predict_proba(X_cal)[:, 1]
         decision_threshold = choose_threshold(
             y_cal, calibration_prob, threshold_candidates
@@ -119,7 +152,9 @@ def run_experiment(
         best_model.decision_threshold_ = decision_threshold
         y_prob = best_model.predict_proba(X_test)[:, 1]
         metrics = compute_metrics(y_test, y_prob, decision_threshold)
-        mlflow.log_metrics(metrics)
+        mlflow.log_metrics(
+            {key: value for key, value in metrics.items() if np.isfinite(value)}
+        )
 
         # Log model to MLflow registry
         mlflow.sklearn.log_model(

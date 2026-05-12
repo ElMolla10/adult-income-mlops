@@ -227,10 +227,16 @@ def test_feature_engineering_writes_preprocessor_and_splits(tmp_path, monkeypatc
     assert len(pd.read_csv("data/splits/production.csv")) == 1
 
 
-def test_training_run_experiment_uses_smote_inside_cv(monkeypatch):
+def test_training_run_experiment_calibrates_threshold(monkeypatch):
     captured = {}
 
     class DummyModel:
+        decision_threshold_ = 0.5
+
+        def fit(self, X, y):
+            captured["refit_rows"] = len(X)
+            return self
+
         def predict(self, X):
             return np.array([0, 1])
 
@@ -241,8 +247,11 @@ def test_training_run_experiment_uses_smote_inside_cv(monkeypatch):
         def __init__(self, estimator, param_distributions, **kwargs):
             captured["estimator"] = estimator
             captured["param_distributions"] = param_distributions
+            captured["n_iter"] = kwargs["n_iter"]
+            captured["cv"] = kwargs["cv"]
+            captured["scoring"] = kwargs["scoring"]
             self.best_estimator_ = DummyModel()
-            self.best_params_ = {"model__C": 1.0}
+            self.best_params_ = {"C": 1.0}
 
         def fit(self, X, y):
             captured["fit_rows"] = len(X)
@@ -256,9 +265,12 @@ def test_training_run_experiment_uses_smote_inside_cv(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
+    def capture_log_param(key, value):
+        captured.setdefault("logged_param", {})[key] = value
+
     monkeypatch.setattr(train_module, "RandomizedSearchCV", FakeSearch)
     monkeypatch.setattr(train_module.mlflow, "start_run", lambda **_: FakeRun())
-    monkeypatch.setattr(train_module.mlflow, "log_param", lambda *_, **__: None)
+    monkeypatch.setattr(train_module.mlflow, "log_param", capture_log_param)
     monkeypatch.setattr(train_module.mlflow, "log_params", lambda params: captured.setdefault("logged_params", params))
     monkeypatch.setattr(train_module.mlflow, "log_metrics", lambda *_, **__: None)
     monkeypatch.setattr(train_module.mlflow.sklearn, "log_model", lambda *_, **__: None)
@@ -281,9 +293,15 @@ def test_training_run_experiment_uses_smote_inside_cv(monkeypatch):
 
     assert run_id == "run-1"
     assert f1 == 1.0
-    assert "smote" in captured["estimator"].named_steps
-    assert captured["param_distributions"] == {"model__C": [1.0]}
+    assert captured["fit_rows"] == 2
+    assert captured["refit_rows"] == 2
+    assert captured["estimator"].__class__.__name__ == "MagicMock"
+    assert captured["param_distributions"] == {"C": [1.0]}
+    assert captured["n_iter"] == 1
+    assert captured["cv"] == 2
+    assert captured["scoring"] == "f1"
     assert captured["logged_params"] == {"C": 1.0}
+    assert captured["logged_param"]["decision_threshold"] == 0.5
 
 
 def test_drift_alert_includes_prefect_retraining_command():

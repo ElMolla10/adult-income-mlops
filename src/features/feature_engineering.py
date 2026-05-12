@@ -71,7 +71,7 @@ def featurize() -> None:
     X_train_t = preprocessor.fit_transform(X_train)
     X_test_t = preprocessor.transform(X_test)
 
-    print("Class distribution before model-time SMOTE:")
+    print("Class distribution before model training:")
     print(y_train.value_counts().sort_index().to_string())
 
     # Save fitted preprocessor pipeline

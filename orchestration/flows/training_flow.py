@@ -5,7 +5,7 @@ End-to-end training orchestration with 6 sequential tasks:
   1. prepare_data    — load & clean raw CSVs
   2. validate_data   — Pandera schema check (halts pipeline on failure)
   3. preprocess      — fit sklearn preprocessing Pipeline, save artifacts
-  4. train           — 3 MLflow experiments + fold-local SMOTE HPO + register best model
+  4. train           — 3 MLflow experiments + threshold calibration + register best model
   5. evaluate        — assert F1 >= threshold (quality gate)
   6. register_model  — verify Production-stage transition in MLflow Registry
 

@@ -61,7 +61,7 @@
 3. **Encoding:** All categorical features are one-hot encoded with `handle_unknown='ignore'` to gracefully handle unseen categories at inference time.
 4. **Label fix:** The `adult.test` file adds a trailing `.` to income labels (e.g. `<=50K.`). This is stripped on load.
 5. **Target encoding:** `>50K` → 1, `<=50K` → 0 for model training.
-6. **Class imbalance:** SMOTE is applied inside the model-selection pipeline during cross-validation, not before the CV split, so synthetic samples do not leak across folds.
+6. **Class imbalance:** Models train on the original class distribution, and the selected model stores a calibrated probability threshold for serving-time predictions.
 
 ---
 

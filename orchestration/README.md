@@ -22,7 +22,7 @@ tasks if it raises an exception.
 | 1 | `prepare_data` | `src/data/load_data.py` | Load raw CSVs, fix labels |
 | 2 | `validate_data` | `src/data/validate_data.py` | Pandera schema check |
 | 3 | `preprocess` | `src/features/feature_engineering.py` | Fit preprocessing pipeline + save splits |
-| 4 | `train` | `src/training/train.py` | 3 experiments, HPO with fold-local SMOTE, register best |
+| 4 | `train` | `src/training/train.py` | 3 experiments, threshold calibration, register best |
 | 5 | `evaluate` | `src/evaluation/evaluate.py` | Quality gate (F1 >= 0.60) |
 | 6 | `register_model` | (verifies in MLflow Registry) | Confirm Production-stage |
 
