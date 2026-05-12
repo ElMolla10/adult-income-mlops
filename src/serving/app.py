@@ -263,7 +263,7 @@ def record_to_df(record: PredictRequest) -> pd.DataFrame:
 # Startup
 # ------------------------------------------------------------------ #
 async def load_model() -> None:
-    global model, preprocessor, load_error
+    global preprocessor, load_error
     load_error = None
     model_loaded = False
 
