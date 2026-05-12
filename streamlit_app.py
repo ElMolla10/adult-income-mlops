@@ -39,6 +39,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.prediction import get_decision_threshold
+
 MODEL_PATH = PROJECT_ROOT / "models" / "best_model.pkl"
 PIPELINE_PATH = PROJECT_ROOT / "data" / "processed" / "pipeline.pkl"
 PARAMS_PATH = PROJECT_ROOT / "configs" / "params.yaml"
@@ -680,7 +682,8 @@ def predict_dataframe(df: pd.DataFrame, preprocessor: Any, model: Any) -> tuple[
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)
         positive = np.asarray(proba)[:, 1]
-        labels = np.where(positive >= 0.5, POSITIVE_LABEL, NEGATIVE_LABEL)
+        threshold = get_decision_threshold(model)
+        labels = np.where(positive >= threshold, POSITIVE_LABEL, NEGATIVE_LABEL)
         return labels, positive
     preds = np.asarray(model.predict(X)).astype(int)
     labels = np.where(preds == 1, POSITIVE_LABEL, NEGATIVE_LABEL)

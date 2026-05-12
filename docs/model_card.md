@@ -5,24 +5,29 @@
 | Field | Value |
 |---|---|
 | **Model name** | adult_income_classifier |
-| **Version** | Current MLflow Model Registry Production version |
+| **Version** | Local retrain, MLflow Model Registry version 3 in temporary validation store |
 | **Task** | Binary classification |
 | **Output** | `>50K` or `<=50K` (annual income) |
 | **Algorithm** | XGBoost, selected by highest F1 among Logistic Regression, Random Forest, and XGBoost |
 | **Framework** | scikit-learn / XGBoost |
-| **Training date** | 2026-05-08 13:01:25 UTC |
+| **Training date** | 2026-05-12 |
 
-XGBoost was selected over RandomForest (F1=0.6892) and LogisticRegression (F1=0.6698) based on highest F1 score on the held-out test set.
+XGBoost was selected over RandomForest (F1=0.6976) and LogisticRegression (F1=0.6821) based on highest threshold-calibrated F1 score on the held-out test set.
 
 ### Best Hyperparameters
 
 | Hyperparameter | Value |
 |---|---:|
 | `model_type` | XGBoost |
-| `n_estimators` | 200 |
-| `max_depth` | 3 |
-| `learning_rate` | 0.3 |
-| `subsample` | 0.8 |
+| `n_estimators` | 350 |
+| `max_depth` | 5 |
+| `learning_rate` | 0.1 |
+| `subsample` | 1.0 |
+| `colsample_bytree` | 1.0 |
+| `min_child_weight` | 1 |
+| `reg_lambda` | 5 |
+| `scale_pos_weight` | 1.0 |
+| `decision_threshold` | 0.425 |
 
 ---
 
@@ -51,7 +56,7 @@ XGBoost was selected over RandomForest (F1=0.6892) and LogisticRegression (F1=0.
 
 ## Preprocessing Summary
 
-The training pipeline applies the saved preprocessing workflow in `data/processed/pipeline.pkl`, including imputation, one-hot encoding, and scaling. SMOTE is applied inside the model-selection pipeline during `RandomizedSearchCV`, so synthetic samples are generated separately within each cross-validation fold. The same `pipeline.pkl` artifact is loaded during serving, eliminating train/serve skew between model training, FastAPI inference, and the Streamlit demo.
+The training pipeline applies the saved preprocessing workflow in `data/processed/pipeline.pkl`, including imputation, one-hot encoding, and scaling. XGBoost is trained on the original class distribution, and the saved model carries a calibrated positive-class threshold (`0.425`) used consistently by evaluation, FastAPI inference, and the Streamlit demo.
 
 The serving API validates categorical inputs against the known Adult Income category sets before inference. Invalid categories are rejected with a 422 response instead of being silently encoded as unknown one-hot values.
 
@@ -63,11 +68,12 @@ The serving API validates categorical inputs against the known Adult Income cate
 
 | Metric | Value |
 |---|---|
-| Accuracy | 0.8541 |
-| F1 Score | 0.7097 |
-| Precision | 0.6697 |
-| Recall | 0.7548 |
-| ROC-AUC | 0.9196 |
+| Accuracy | 0.8689 |
+| F1 Score | 0.7199 |
+| Precision | 0.7268 |
+| Recall | 0.7132 |
+| ROC-AUC | 0.9281 |
+| Predicted Positive Rate | 0.2318 |
 
 ### Per-Subgroup Metrics
 
@@ -75,13 +81,13 @@ Metrics below are computed with `classification_report` on `adult.test` filtered
 
 | Attribute | Group | Rows | Positive Rate | Accuracy | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| sex | Female | 5,421 | 0.1088 | 0.9299 | 0.6895 | 0.6475 | 0.6678 |
-| sex | Male | 10,860 | 0.2998 | 0.8163 | 0.6668 | 0.7743 | 0.7165 |
-| race | Amer-Indian-Eskimo | 159 | 0.1195 | 0.9119 | 0.7778 | 0.3684 | 0.5000 |
-| race | Asian-Pac-Islander | 480 | 0.2771 | 0.8354 | 0.7177 | 0.6692 | 0.6926 |
-| race | Black | 1,561 | 0.1147 | 0.9263 | 0.7105 | 0.6034 | 0.6526 |
-| race | Other | 135 | 0.1852 | 0.8963 | 0.9231 | 0.4800 | 0.6316 |
-| race | White | 13,946 | 0.2503 | 0.8456 | 0.6656 | 0.7699 | 0.7140 |
+| sex | Female | 5,421 | 0.1088 | 0.9356 | 0.7287 | 0.6508 | 0.6876 |
+| sex | Male | 10,860 | 0.2998 | 0.8356 | 0.7265 | 0.7245 | 0.7255 |
+| race | Amer-Indian-Eskimo | 159 | 0.1195 | 0.9119 | 0.6667 | 0.5263 | 0.5882 |
+| race | Asian-Pac-Islander | 480 | 0.2771 | 0.8375 | 0.6978 | 0.7293 | 0.7132 |
+| race | Black | 1,561 | 0.1147 | 0.9276 | 0.7230 | 0.5978 | 0.6544 |
+| race | Other | 135 | 0.1852 | 0.8963 | 0.8667 | 0.5200 | 0.6500 |
+| race | White | 13,946 | 0.2503 | 0.8627 | 0.7278 | 0.7209 | 0.7243 |
 
 > **Note:** The model inherits the historical biases present in 1994 Census data. Income disparity by sex and race is a data artefact, not a model design choice.
 

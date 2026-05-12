@@ -27,6 +27,8 @@ from prometheus_client import (
 )
 from pydantic import BaseModel, Field
 
+from src.prediction import get_decision_threshold
+
 
 # ------------------------------------------------------------------ #
 # Config
@@ -344,7 +346,8 @@ def predict(request: PredictRequest):
     df = record_to_df(request)
     X = preprocessor.transform(df)
     prob = float(model.predict_proba(X)[0][1])
-    pred = ">50K" if prob >= 0.5 else "<=50K"
+    threshold = get_decision_threshold(model)
+    pred = ">50K" if prob >= threshold else "<=50K"
     latency = time.time() - t0
 
     INFERENCE_LATENCY.observe(latency)

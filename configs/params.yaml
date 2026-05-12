@@ -51,7 +51,9 @@ training:
   hpo_n_iter: 10
   hpo_cv: 3
   metric: f1
-  min_f1_threshold: 0.60
+  calibration_size: 0.20
+  threshold_candidates: [0.35, 0.375, 0.40, 0.425, 0.45, 0.475, 0.50, 0.525, 0.55, 0.575, 0.60, 0.625, 0.65, 0.675, 0.70]
+  min_f1_threshold: 0.70
   models:
     logistic_regression:
       C: [0.01, 0.1, 1.0, 10.0]
@@ -62,10 +64,14 @@ training:
       max_depth: [5, 10, 20]
       min_samples_split: [2, 5, 10]
     xgboost:
-      n_estimators: [100, 200]
-      max_depth: [3, 6, 9]
-      learning_rate: [0.01, 0.1, 0.3]
-      subsample: [0.8, 1.0]
+      n_estimators: [350]
+      max_depth: [5]
+      learning_rate: [0.1]
+      subsample: [1.0]
+      colsample_bytree: [1.0]
+      min_child_weight: [1]
+      reg_lambda: [5]
+      scale_pos_weight: [1.0]
 
 serving:
   model_name: adult_income_classifier

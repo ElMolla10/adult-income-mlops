@@ -12,8 +12,6 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import yaml
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline as ImbPipeline
 from mlflow.tracking import MlflowClient
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -24,7 +22,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import ParameterGrid, RandomizedSearchCV, train_test_split
 from xgboost import XGBClassifier
 
 
@@ -41,14 +39,32 @@ def load_splits():
     return X_train, X_test, y_train, y_test
 
 
-def compute_metrics(y_true, y_pred, y_prob: np.ndarray) -> dict:
+def compute_metrics(y_true, y_prob: np.ndarray, threshold: float) -> dict:
+    y_pred = (y_prob >= threshold).astype(int)
     return {
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
         "f1": round(f1_score(y_true, y_pred), 4),
         "precision": round(precision_score(y_true, y_pred), 4),
         "recall": round(recall_score(y_true, y_pred), 4),
         "roc_auc": round(roc_auc_score(y_true, y_prob), 4),
+        "positive_rate": round(float(np.mean(y_pred)), 4),
     }
+
+
+def choose_threshold(y_true, y_prob: np.ndarray, candidates: list[float]) -> float:
+    """Pick the threshold with best F1, preferring precision on ties."""
+    best_threshold, best_f1, best_precision = 0.5, -1.0, -1.0
+
+    for threshold in candidates:
+        y_pred = (y_prob >= threshold).astype(int)
+        f1 = f1_score(y_true, y_pred)
+        precision = precision_score(y_true, y_pred, zero_division=0)
+        if (f1, precision, threshold) > (best_f1, best_precision, best_threshold):
+            best_threshold = float(threshold)
+            best_f1 = f1
+            best_precision = precision
+
+    return best_threshold
 
 
 def run_experiment(
@@ -66,36 +82,43 @@ def run_experiment(
     with mlflow.start_run(run_name=model_name, experiment_id=experiment_id) as run:
         mlflow.log_param("model_type", model_name)
 
-        estimator = ImbPipeline(
-            steps=[
-                ("smote", SMOTE(random_state=params["preprocessing"]["random_state"])),
-                ("model", model),
-            ]
+        X_fit, X_cal, y_fit, y_cal = train_test_split(
+            X_train,
+            y_train,
+            test_size=params["training"]["calibration_size"],
+            random_state=params["preprocessing"]["random_state"],
+            stratify=y_train,
         )
-        search_grid = {
-            f"model__{key}": value
-            for key, value in param_grid.items()
-        }
+        n_iter = min(
+            params["training"]["hpo_n_iter"],
+            len(list(ParameterGrid(param_grid))),
+        )
 
         search = RandomizedSearchCV(
-            estimator=estimator,
-            param_distributions=search_grid,
-            n_iter=params["training"]["hpo_n_iter"],
+            estimator=model,
+            param_distributions=param_grid,
+            n_iter=n_iter,
             cv=params["training"]["hpo_cv"],
             scoring=params["training"]["metric"],
             random_state=42,
             n_jobs=-1,
         )
-        search.fit(X_train, y_train)
+        search.fit(X_fit, y_fit)
         best_model = search.best_estimator_
 
-        mlflow.log_params(
-            {key.replace("model__", ""): value for key, value in search.best_params_.items()}
+        mlflow.log_params(search.best_params_)
+        threshold_candidates = params["training"]["threshold_candidates"]
+        calibration_prob = best_model.predict_proba(X_cal)[:, 1]
+        decision_threshold = choose_threshold(
+            y_cal, calibration_prob, threshold_candidates
         )
+        mlflow.log_param("decision_threshold", decision_threshold)
 
-        y_pred = best_model.predict(X_test)
+        # Refit on the full training split after selecting model params and threshold.
+        best_model.fit(X_train, y_train)
+        best_model.decision_threshold_ = decision_threshold
         y_prob = best_model.predict_proba(X_test)[:, 1]
-        metrics = compute_metrics(y_test, y_pred, y_prob)
+        metrics = compute_metrics(y_test, y_prob, decision_threshold)
         mlflow.log_metrics(metrics)
 
         # Log model to MLflow registry
@@ -107,7 +130,9 @@ def run_experiment(
 
         run_id = run.info.run_id
         print(
-            f"  {model_name:20s} | F1={metrics['f1']:.4f} | ROC-AUC={metrics['roc_auc']:.4f}"
+            f"  {model_name:20s} | F1={metrics['f1']:.4f} | "
+            f"Precision={metrics['precision']:.4f} | "
+            f"Recall={metrics['recall']:.4f} | Threshold={decision_threshold:.3f}"
         )
         return metrics["f1"], run_id, best_model
 
@@ -149,12 +174,21 @@ def train() -> None:
         ),
         (
             "XGBoost",
-            XGBClassifier(random_state=42, eval_metric="logloss", verbosity=0),
+            XGBClassifier(
+                random_state=42,
+                eval_metric="logloss",
+                tree_method="hist",
+                verbosity=0,
+            ),
             {
                 "n_estimators": mp["xgboost"]["n_estimators"],
                 "max_depth": mp["xgboost"]["max_depth"],
                 "learning_rate": mp["xgboost"]["learning_rate"],
                 "subsample": mp["xgboost"]["subsample"],
+                "colsample_bytree": mp["xgboost"]["colsample_bytree"],
+                "min_child_weight": mp["xgboost"]["min_child_weight"],
+                "reg_lambda": mp["xgboost"]["reg_lambda"],
+                "scale_pos_weight": mp["xgboost"]["scale_pos_weight"],
             },
         ),
     ]

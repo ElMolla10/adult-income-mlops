@@ -5,8 +5,8 @@ stages:
     deps:
     - path: configs/params.yaml
       hash: md5
-      md5: 12f2fbac6558f019fb6234cb10c7d277
-      size: 1864
+      md5: d0714dda547107254e0e12a4138e4bf6
+      size: 2094
     - path: data/raw/adult.data
       hash: md5
       md5: 5d7c39d7b8804f071cdd1f2a7c460872
@@ -52,8 +52,8 @@ stages:
     deps:
     - path: configs/params.yaml
       hash: md5
-      md5: 12f2fbac6558f019fb6234cb10c7d277
-      size: 1864
+      md5: d0714dda547107254e0e12a4138e4bf6
+      size: 2094
     - path: data/processed/test.csv
       hash: md5
       md5: 685ff09725a035fd2c84d56ab969a427
@@ -124,8 +124,8 @@ stages:
     deps:
     - path: configs/params.yaml
       hash: md5
-      md5: 12f2fbac6558f019fb6234cb10c7d277
-      size: 1864
+      md5: d0714dda547107254e0e12a4138e4bf6
+      size: 2094
     - path: data/splits/X_test.csv
       hash: md5
       md5: dffc8099975df8180b156da5cfdb2de8
@@ -144,14 +144,31 @@ stages:
       size: 65129
     - path: src/training/train.py
       hash: md5
-      md5: 00eb1bdbda4681abbbbf8058aaf008aa
-      size: 6918
+      md5: b584ad2f1a270bf91f8de6bc2df0a68a
+      size: 8516
     params:
       configs/params.yaml:
         training.experiment_name: adult_income_classification
         training.hpo_cv: 3
         training.hpo_n_iter: 10
         training.metric: f1
+        training.calibration_size: 0.2
+        training.threshold_candidates:
+        - 0.35
+        - 0.375
+        - 0.4
+        - 0.425
+        - 0.45
+        - 0.475
+        - 0.5
+        - 0.525
+        - 0.55
+        - 0.575
+        - 0.6
+        - 0.625
+        - 0.65
+        - 0.675
+        - 0.7
         training.models:
           logistic_regression:
             C:
@@ -179,21 +196,23 @@ stages:
             - 10
           xgboost:
             n_estimators:
-            - 100
-            - 200
+            - 350
             max_depth:
-            - 3
-            - 6
-            - 9
+            - 5
             learning_rate:
-            - 0.01
             - 0.1
-            - 0.3
             subsample:
-            - 0.8
+            - 1.0
+            colsample_bytree:
+            - 1.0
+            min_child_weight:
+            - 1
+            reg_lambda:
+            - 5
+            scale_pos_weight:
             - 1.0
     outs:
     - path: models/best_model.pkl
       hash: md5
-      md5: a82249ce7288b1071ea75297d3a93e1a
-      size: 6815894
+      md5: 7f6bdd1ef2e0bcf256decf14a7255498
+      size: 662325

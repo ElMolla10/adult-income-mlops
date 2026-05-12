@@ -54,4 +54,6 @@ stages:
           - training.hpo_n_iter
           - training.hpo_cv
           - training.metric
+          - training.calibration_size
+          - training.threshold_candidates
           - training.models
