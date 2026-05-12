@@ -41,6 +41,7 @@ def _mock_preprocessor():
 def _mock_model(prob=0.72):
     m = mock.MagicMock()
     m.predict_proba.return_value = np.array([[1 - prob, prob]])
+    m.decision_threshold_ = 0.5
     return m
 
 
@@ -105,6 +106,7 @@ def test_predict_response_schema(client):
     data = client.post("/predict", json=VALID_RECORD).json()
     assert "prediction" in data
     assert "confidence" in data
+    assert "decision_threshold" in data
     assert "model_version" in data
 
 
@@ -116,6 +118,18 @@ def test_predict_prediction_values(client):
 def test_predict_confidence_range(client):
     data = client.post("/predict", json=VALID_RECORD).json()
     assert 0.0 <= data["confidence"] <= 1.0
+
+
+def test_predict_uses_model_decision_threshold(client):
+    import src.serving.app as app_module
+
+    app_module.model = _mock_model(prob=0.72)
+    app_module.model.decision_threshold_ = 0.8
+
+    data = client.post("/predict", json=VALID_RECORD).json()
+
+    assert data["prediction"] == "<=50K"
+    assert data["decision_threshold"] == 0.8
 
 
 def test_predict_invalid_input_returns_422(client):
@@ -159,6 +173,11 @@ def test_batch_predict_returns_200(client):
 def test_batch_predict_returns_correct_count(client):
     data = client.post("/predict/batch", json=BATCH_REQUEST).json()
     assert len(data["predictions"]) == 2
+
+
+def test_batch_predict_empty_records_returns_422(client):
+    response = client.post("/predict/batch", json={"records": []})
+    assert response.status_code == 422
 
 
 def test_batch_predict_invalid_category_returns_422(client):

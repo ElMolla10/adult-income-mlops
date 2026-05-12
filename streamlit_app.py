@@ -58,11 +58,11 @@ POSITIVE_LABEL = ">50K"
 NEGATIVE_LABEL = "<=50K"
 
 MODEL_METRICS = {
-    "F1": 0.7097,
-    "Accuracy": 0.8541,
-    "ROC-AUC": 0.9196,
-    "Precision": 0.6697,
-    "Recall": 0.7548,
+    "F1": 0.7199,
+    "Accuracy": 0.8689,
+    "ROC-AUC": 0.9281,
+    "Precision": 0.7268,
+    "Recall": 0.7132,
 }
 
 NUMERIC_FEATURES = [
@@ -810,7 +810,8 @@ def architecture_figure() -> go.Figure:
     return fig
 
 
-def confidence_gauge(probability: float) -> go.Figure:
+def confidence_gauge(probability: float, threshold: float = 0.5) -> go.Figure:
+    cutoff = threshold * 100
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
@@ -821,10 +822,10 @@ def confidence_gauge(probability: float) -> go.Figure:
                 "axis": {"range": [0, 100]},
                 "bar": {"color": "#2563eb"},
                 "steps": [
-                    {"range": [0, 50], "color": "#dcfce7"},
-                    {"range": [50, 100], "color": "#ffedd5"},
+                    {"range": [0, cutoff], "color": "#dcfce7"},
+                    {"range": [cutoff, 100], "color": "#ffedd5"},
                 ],
-                "threshold": {"line": {"color": "#111827", "width": 3}, "value": 50},
+                "threshold": {"line": {"color": "#111827", "width": 3}, "value": cutoff},
             },
         )
     )
@@ -973,12 +974,14 @@ def render_single_prediction(preprocessor: Any, model: Any, model_ready: bool) -
 
     label = str(labels[0])
     probability = float(proba[0]) if proba is not None else (1.0 if label == POSITIVE_LABEL else 0.0)
+    threshold = get_decision_threshold(model)
     r1, r2 = st.columns([1, 2])
     with r1:
         st.subheader("Prediction")
         result_badge(label)
+        st.metric("Decision threshold", f"{threshold:.3f}")
     with r2:
-        st.plotly_chart(confidence_gauge(probability), use_container_width=True)
+        st.plotly_chart(confidence_gauge(probability, threshold), use_container_width=True)
 
     importance = feature_importance_frame(preprocessor, model)
     if importance.empty:

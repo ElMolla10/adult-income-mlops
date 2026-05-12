@@ -25,7 +25,7 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.prediction import get_decision_threshold
 
@@ -202,6 +202,8 @@ NativeCountry = Literal[
 
 
 class PredictRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     age: int = Field(..., ge=17, le=100)
     workclass: Optional[Workclass] = None
     fnlwgt: int = Field(..., gt=0)
@@ -217,18 +219,18 @@ class PredictRequest(BaseModel):
     hours_per_week: int = Field(..., alias="hours-per-week", ge=1, le=99)
     native_country: Optional[NativeCountry] = Field(None, alias="native-country")
 
-    class Config:
-        populate_by_name = True
-
 
 class PredictResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     prediction: str
     confidence: float
+    decision_threshold: float
     model_version: str
 
 
 class BatchPredictRequest(BaseModel):
-    records: List[PredictRequest]
+    records: List[PredictRequest] = Field(..., min_length=1)
 
 
 # ------------------------------------------------------------------ #
@@ -263,14 +265,21 @@ def record_to_df(record: PredictRequest) -> pd.DataFrame:
 async def load_model() -> None:
     global model, preprocessor, load_error
     load_error = None
-
-    tracking_uri = os.environ.get(
-        "MLFLOW_TRACKING_URI", params["training"]["mlflow_tracking_uri"]
-    )
-    mlflow.set_tracking_uri(tracking_uri)
-
     model_loaded = False
-    try:
+
+    def load_local_model() -> None:
+        global model
+        model_path = params["preprocessing"]["best_model_path"]
+        with open(model_path, "rb") as f:
+            model = pickle.load(f)
+        model_info["version"] = "local"
+
+    def load_mlflow_model() -> None:
+        global model
+        tracking_uri = os.environ.get(
+            "MLFLOW_TRACKING_URI", params["training"]["mlflow_tracking_uri"]
+        )
+        mlflow.set_tracking_uri(tracking_uri)
         model_uri = (
             f"models:/{params['serving']['model_name']}"
             f"/{params['serving']['model_stage']}"
@@ -285,19 +294,27 @@ async def load_model() -> None:
         if versions:
             model_info["version"] = versions[0].version
             MODEL_VERSION_GAUGE.set(float(versions[0].version))
+
+    use_mlflow = os.environ.get("ADULT_INCOME_USE_MLFLOW", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    primary_loader, fallback_loader = (
+        (load_mlflow_model, load_local_model) if use_mlflow else (load_local_model, load_mlflow_model)
+    )
+
+    try:
+        primary_loader()
         model_loaded = True
-    except Exception as mlflow_exc:
-        # Fallback: load from disk (useful in CI / Docker without MLflow)
+    except Exception as primary_exc:
         try:
-            model_path = params["preprocessing"]["best_model_path"]
-            with open(model_path, "rb") as f:
-                model = pickle.load(f)
-            model_info["version"] = "local"
+            fallback_loader()
             model_loaded = True
-        except Exception as local_exc:
+        except Exception as fallback_exc:
             load_error = (
-                f"MLflow load failed: {mlflow_exc}. "
-                f"Local model load failed: {local_exc}."
+                f"Primary model load failed: {primary_exc}. "
+                f"Fallback model load failed: {fallback_exc}."
             )
 
     try:
@@ -359,6 +376,7 @@ def predict(request: PredictRequest):
     return PredictResponse(
         prediction=pred,
         confidence=round(prob, 4),
+        decision_threshold=round(threshold, 4),
         model_version=str(model_info["version"]),
     )
 
